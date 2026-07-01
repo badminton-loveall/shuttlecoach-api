@@ -28,7 +28,7 @@ app.use((req, _res, next) => {
   next();
 });
 
-// Root route (simple, no dependencies)
+// Root route
 app.get('/', (_req: Request, res: Response) => {
   console.log('✅ Root route hit');
   res.json({
@@ -50,20 +50,22 @@ app.get('/api/health', (_req: Request, res: Response) => {
   });
 });
 
-// API routes - import lazily to avoid initialization issues
+// API routes
 app.use('/api', (req: Request, res: Response, next: NextFunction) => {
   try {
     console.log(`Loading routes for: ${req.method} ${req.path}`);
-    // Import routes synchronously
-    const routesModule = require('../dist/routes/index');
-    const routes = routesModule.default || routesModule;
+    
+    // Load compiled routes (they're at ./routes relative to compiled api/index.js)
+    const routes = require('./routes').default;
     
     if (typeof routes === 'function') {
+      console.log('✅ Routes loaded successfully');
       routes(req, res, next);
     } else {
+      console.error('❌ Routes not a function:', typeof routes);
       res.status(500).json({
         error: 'Routes not properly exported',
-        message: 'Failed to load API routes'
+        message: 'Routes module does not export a function'
       });
     }
   } catch (error) {
@@ -71,14 +73,14 @@ app.use('/api', (req: Request, res: Response, next: NextFunction) => {
     res.status(500).json({
       error: 'Internal Server Error',
       message: process.env.NODE_ENV === 'development' ? String(error) : 'Failed to load API routes',
-      detail: String(error)
+      detail: process.env.NODE_ENV === 'development' ? String(error) : undefined
     });
   }
 });
 
 // 404 handler
 app.use((_req: Request, res: Response) => {
-  console.log('❌ 404 - Route not found');
+  console.log(`❌ 404 - Route not found: ${_req.path}`);
   res.status(404).json({
     error: 'Not Found',
     message: 'The requested resource was not found',
@@ -95,5 +97,4 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   });
 });
 
-// Export the Express app for Vercel
 export default app;
