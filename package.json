@@ -1,0 +1,43 @@
+{
+  "name": "shuttlecoach-api",
+  "version": "1.0.0",
+  "description": "LoveAll Shuttlecoach Backend API - Badminton Training Management System",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "nodemon --watch src --ext ts --exec ts-node src/server.ts",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "migrate": "ts-node src/migrations/run-migrations.ts",
+    "migrate:rollback": "psql $DATABASE_URL -f src/migrations/000_rollback.sql"
+  },
+  "keywords": [
+    "badminton",
+    "training",
+    "management",
+    "express",
+    "typescript"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.22.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^26.0.1",
+    "@types/pg": "^8.20.0",
+    "nodemon": "^3.1.14",
+    "ts-node": "^10.9.2",
+    "typescript": "^6.0.3"
+  }
+}

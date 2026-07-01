@@ -1,0 +1,3 @@
+# Database migration scripts will be added here
+# Naming convention: XXX_description.sql
+# Example: 001_initial_schema.sql
