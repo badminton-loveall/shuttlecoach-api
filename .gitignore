@@ -34,3 +34,5 @@ coverage/
 *.tgz
 .npm
 .eslintcache
+.vercel
+.env*

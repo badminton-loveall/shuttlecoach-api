@@ -41,6 +41,17 @@ app.get('/', (_req, res) => {
   });
 });
 
+// Debug route (remove in production)
+app.get('/api/debug/config', (_req, res) => {
+  res.json({
+    nodeEnv: config.nodeEnv,
+    allowedOrigins: config.allowedOrigins,
+    databaseUrlPresent: !!config.databaseUrl,
+    databaseUrlPreview: config.databaseUrl ? config.databaseUrl.substring(0, 50) + '...' : 'NOT SET',
+    jwtSecretPresent: !!config.jwtSecret,
+  });
+});
+
 // Error handlers (must be last)
 app.use(notFoundHandler);
 app.use(errorHandler);
