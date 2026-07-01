@@ -23,13 +23,18 @@ export const login = async (
       return;
     }
 
+    console.log('[LOGIN] Attempting login for user:', username);
+
     // Find user by username
     const result = await query(
       'SELECT id, username, password_hash, role, name, email, profile_photo, specialization FROM users WHERE username = $1',
       [username]
     );
 
+    console.log('[LOGIN] Query result rows:', result.rows.length);
+
     if (result.rows.length === 0) {
+      console.log('[LOGIN] User not found:', username);
       res.status(401).json({
         error: 'Invalid credentials',
       });
@@ -37,11 +42,14 @@ export const login = async (
     }
 
     const user = result.rows[0];
+    console.log('[LOGIN] User found:', user.username, 'role:', user.role);
 
     // Compare password with hash
     const isPasswordValid = await comparePassword(password, user.password_hash);
+    console.log('[LOGIN] Password valid:', isPasswordValid);
 
     if (!isPasswordValid) {
+      console.log('[LOGIN] Password mismatch for user:', username);
       res.status(401).json({
         error: 'Invalid credentials',
       });
@@ -79,9 +87,10 @@ export const login = async (
       role: user.role,
     };
 
+    console.log('[LOGIN] Login successful for user:', username);
     res.status(200).json(response);
   } catch (error) {
-    console.error('Login error:', error);
+    console.error('[LOGIN] Login error:', error);
     res.status(500).json({
       error: 'An error occurred during login',
     });
