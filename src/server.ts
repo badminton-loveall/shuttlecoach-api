@@ -52,6 +52,23 @@ app.get('/api/debug/config', (_req, res) => {
   });
 });
 
+// Debug database connection
+app.get('/api/debug/db', async (_req, res) => {
+  try {
+    const { query } = await import('./config/database');
+    const result = await query('SELECT COUNT(*) FROM users');
+    res.json({
+      status: 'connected',
+      userCount: result.rows[0].count,
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      status: 'error',
+      message: error.message,
+    });
+  }
+});
+
 // Error handlers (must be last)
 app.use(notFoundHandler);
 app.use(errorHandler);
