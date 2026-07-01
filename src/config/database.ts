@@ -7,30 +7,56 @@ const poolConfig: PoolConfig = {
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
   // Serverless-optimized settings
-  max: process.env.NODE_ENV === 'production' ? 1 : 10, // Single connection for serverless
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000,
+  max: 1, // Single connection for serverless (prevent connection pool exhaustion)
+  min: 0,
+  idleTimeoutMillis: 10000, // Reduced idle timeout
+  connectionTimeoutMillis: 30000, // Increased timeout for external DB
+  statement_timeout: 30000,
+  query_timeout: 30000,
 };
 
-export const pool = new Pool(poolConfig);
+// Create a single shared pool instance
+let pool: Pool | null = null;
 
-// Handle pool errors
-pool.on('error', (err) => {
-  console.error('Unexpected database pool error:', err);
-});
+function getPool() {
+  if (!pool) {
+    console.log('[DB] Initializing new pool');
+    pool = new Pool(poolConfig);
+    
+    // Handle pool errors
+    pool.on('error', (err) => {
+      console.error('[DB] Unexpected database pool error:', err);
+      pool = null; // Reset pool on error
+    });
+  }
+  return pool;
+}
 
-// Query helper function
-export const query = (text: string, params?: any[]) => {
-  return pool.query(text, params);
+export { getPool as Pool };
+
+// Query helper function with error handling
+export const query = async (text: string, params?: any[]) => {
+  try {
+    const p = getPool();
+    console.log('[DB] Executing query:', text.substring(0, 100));
+    const result = await p.query(text, params);
+    console.log('[DB] Query result rows:', result.rows.length);
+    return result;
+  } catch (error: any) {
+    console.error('[DB] Query error:', error.message);
+    pool = null; // Reset pool on error
+    throw error;
+  }
 };
 
 // Test database connection (lightweight)
 export const testConnection = async (): Promise<void> => {
   try {
-    const result = await pool.query('SELECT NOW()');
-    console.log('✅ Database connected at:', result.rows[0].now);
+    const p = getPool();
+    const result = await p.query('SELECT NOW()');
+    console.log('[DB] Connection test successful at:', result.rows[0].now);
   } catch (error) {
-    console.error('❌ Database connection failed:', error);
+    console.error('[DB] Connection test failed:', error);
     throw error;
   }
 };
@@ -38,13 +64,19 @@ export const testConnection = async (): Promise<void> => {
 // Graceful shutdown (only for non-serverless environments)
 if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
   process.on('SIGTERM', async () => {
-    console.log('SIGTERM received, closing database connections...');
-    await pool.end();
+    console.log('[DB] SIGTERM received, closing database connections...');
+    if (pool) {
+      await pool.end();
+      pool = null;
+    }
   });
 
   process.on('SIGINT', async () => {
-    console.log('SIGINT received, closing database connections...');
-    await pool.end();
+    console.log('[DB] SIGINT received, closing database connections...');
+    if (pool) {
+      await pool.end();
+      pool = null;
+    }
     process.exit(0);
   });
 }
