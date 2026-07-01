@@ -43,12 +43,18 @@ app.get('/', (_req, res) => {
 
 // Debug route (remove in production)
 app.get('/api/debug/config', (_req, res) => {
+  console.log('[DEBUG] Checking environment variables...');
+  console.log('NODE_ENV:', process.env.NODE_ENV);
+  console.log('DATABASE_URL set:', !!process.env.DATABASE_URL);
+  console.log('DATABASE_URL first 50 chars:', process.env.DATABASE_URL?.substring(0, 50));
+  
   res.json({
     nodeEnv: config.nodeEnv,
     allowedOrigins: config.allowedOrigins,
     databaseUrlPresent: !!config.databaseUrl,
     databaseUrlPreview: config.databaseUrl ? config.databaseUrl.substring(0, 50) + '...' : 'NOT SET',
     jwtSecretPresent: !!config.jwtSecret,
+    envDatabaseUrl: !!process.env.DATABASE_URL,
   });
 });
 
