@@ -55,23 +55,23 @@ app.get('/api/debug/config', (_req, res) => {
 // Debug database connection
 app.get('/api/debug/db', async (_req, res) => {
   try {
-    const dns = require('dns');
-    const { promisify } = require('util');
-    const resolve4 = promisify(dns.resolve4);
+    const https = require('https');
     
-    console.log('[DEBUG] Testing DNS resolution...');
-    try {
-      const addresses = await resolve4('db.iskgcawkodjrsujvyouc.supabase.co');
-      console.log('[DEBUG] DNS resolved to:', addresses);
-    } catch (dnsErr: any) {
-      console.log('[DEBUG] DNS error:', dnsErr.message);
-    }
+    console.log('[DEBUG] Testing external HTTPS request...');
+    const httpRes = await new Promise((resolve, reject) => {
+      https.get('https://www.google.com', (res: any) => {
+        resolve(res.statusCode);
+      }).on('error', reject);
+    });
+    
+    console.log('[DEBUG] Google.com status:', httpRes);
     
     const { query } = await import('./config/database');
     const result = await query('SELECT COUNT(*) FROM users');
     res.json({
       status: 'connected',
       userCount: result.rows[0].count,
+      externalHttps: httpRes,
     });
   } catch (error: any) {
     res.status(500).json({
