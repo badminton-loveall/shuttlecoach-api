@@ -53,27 +53,44 @@ app.get('/api/health', (_req: Request, res: Response) => {
 // API routes
 app.use('/api', (req: Request, res: Response, next: NextFunction) => {
   try {
-    console.log(`Loading routes for: ${req.method} ${req.path}`);
+    console.log(`🔍 Loading routes for: ${req.method} ${req.path}`);
+    console.log(`📁 Current working directory: ${process.cwd()}`);
+    console.log(`📁 __dirname: ${__dirname}`);
     
-    // Load compiled routes (they're at ./routes relative to compiled api/index.js)
-    const routes = require('./routes').default;
+    // Try to load routes with detailed logging
+    let routes;
+    try {
+      console.log('🔎 Trying to require ./routes');
+      routes = require('./routes');
+      console.log('✅ Module loaded:', typeof routes);
+      console.log('✅ Module keys:', Object.keys(routes));
+      routes = routes.default || routes;
+      console.log('✅ After default extraction:', typeof routes);
+    } catch (loadError) {
+      console.error('❌ Failed to load ./routes:', loadError);
+      throw loadError;
+    }
     
     if (typeof routes === 'function') {
-      console.log('✅ Routes loaded successfully');
+      console.log('✅ Routes is a function, calling it');
       routes(req, res, next);
     } else {
-      console.error('❌ Routes not a function:', typeof routes);
+      console.error('❌ Routes is not a function, it is:', typeof routes);
       res.status(500).json({
         error: 'Routes not properly exported',
-        message: 'Routes module does not export a function'
+        message: 'Routes module does not export a function',
+        type: typeof routes
       });
     }
   } catch (error) {
     console.error('❌ Error loading routes:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : '';
     res.status(500).json({
       error: 'Internal Server Error',
-      message: process.env.NODE_ENV === 'development' ? String(error) : 'Failed to load API routes',
-      detail: process.env.NODE_ENV === 'development' ? String(error) : undefined
+      message: 'Failed to load API routes',
+      detail: process.env.NODE_ENV === 'development' ? errorMessage : undefined,
+      stack: process.env.NODE_ENV === 'development' ? errorStack : undefined
     });
   }
 });
