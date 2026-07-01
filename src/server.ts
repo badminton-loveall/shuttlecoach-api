@@ -55,6 +55,18 @@ app.get('/api/debug/config', (_req, res) => {
 // Debug database connection
 app.get('/api/debug/db', async (_req, res) => {
   try {
+    const dns = require('dns');
+    const { promisify } = require('util');
+    const resolve4 = promisify(dns.resolve4);
+    
+    console.log('[DEBUG] Testing DNS resolution...');
+    try {
+      const addresses = await resolve4('db.iskgcawkodjrsujvyouc.supabase.co');
+      console.log('[DEBUG] DNS resolved to:', addresses);
+    } catch (dnsErr: any) {
+      console.log('[DEBUG] DNS error:', dnsErr.message);
+    }
+    
     const { query } = await import('./config/database');
     const result = await query('SELECT COUNT(*) FROM users');
     res.json({
@@ -65,6 +77,7 @@ app.get('/api/debug/db', async (_req, res) => {
     res.status(500).json({
       status: 'error',
       message: error.message,
+      code: error.code,
     });
   }
 });
