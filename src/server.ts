@@ -2,7 +2,6 @@ import express, { Application } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { config } from './config/env';
-import { testConnection } from './config/database';
 import routes from './routes';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 
@@ -46,15 +45,18 @@ app.get('/', (_req, res) => {
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-// Start server
-const startServer = async (): Promise<void> => {
-  try {
-    // Test database connection
-    await testConnection();
+// Export app for serverless/modules
+export default app;
 
-    // Start listening
-    app.listen(config.port, () => {
-      console.log(`
+// Only start server if running directly (not imported as module)
+if (require.main === module) {
+  const startServer = async (): Promise<void> => {
+    try {
+      const { testConnection } = await import('./config/database');
+      await testConnection();
+
+      app.listen(config.port, () => {
+        console.log(`
 ╔════════════════════════════════════════╗
 ║   ShuttleCoach API Server Started     ║
 ╠════════════════════════════════════════╣
@@ -63,20 +65,12 @@ const startServer = async (): Promise<void> => {
 ║  Database:    Connected ✅             ║
 ╚════════════════════════════════════════╝
       `);
-    });
-  } catch (error) {
-    console.error('Failed to start server:', error);
-    process.exit(1);
-  }
-};
+      });
+    } catch (error) {
+      console.error('Failed to start server:', error);
+      process.exit(1);
+    }
+  };
 
-// Handle unhandled promise rejections
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-  process.exit(1);
-});
-
-// Start the server
-startServer();
-
-export default app;
+  startServer();
+}
