@@ -41,53 +41,6 @@ app.get('/', (_req, res) => {
   });
 });
 
-// Debug route (remove in production)
-app.get('/api/debug/config', (_req, res) => {
-  console.log('[DEBUG] Checking environment variables...');
-  console.log('NODE_ENV:', process.env.NODE_ENV);
-  console.log('DATABASE_URL set:', !!process.env.DATABASE_URL);
-  console.log('DATABASE_URL first 50 chars:', process.env.DATABASE_URL?.substring(0, 50));
-  
-  res.json({
-    nodeEnv: config.nodeEnv,
-    allowedOrigins: config.allowedOrigins,
-    databaseUrlPresent: !!config.databaseUrl,
-    databaseUrlPreview: config.databaseUrl ? config.databaseUrl.substring(0, 50) + '...' : 'NOT SET',
-    jwtSecretPresent: !!config.jwtSecret,
-    envDatabaseUrl: !!process.env.DATABASE_URL,
-  });
-});
-
-// Debug database connection
-app.get('/api/debug/db', async (_req, res) => {
-  try {
-    const https = require('https');
-    
-    console.log('[DEBUG] Testing external HTTPS request...');
-    const httpRes = await new Promise((resolve, reject) => {
-      https.get('https://www.google.com', (res: any) => {
-        resolve(res.statusCode);
-      }).on('error', reject);
-    });
-    
-    console.log('[DEBUG] Google.com status:', httpRes);
-    
-    const { query } = await import('./config/database');
-    const result = await query('SELECT COUNT(*) FROM users');
-    res.json({
-      status: 'connected',
-      userCount: result.rows[0].count,
-      externalHttps: httpRes,
-    });
-  } catch (error: any) {
-    res.status(500).json({
-      status: 'error',
-      message: error.message,
-      code: error.code,
-    });
-  }
-});
-
 // Error handlers (must be last)
 app.use(notFoundHandler);
 app.use(errorHandler);
