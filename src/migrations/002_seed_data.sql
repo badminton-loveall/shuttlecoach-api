@@ -10,7 +10,7 @@
 -- In production, use proper bcrypt hashing
 
 INSERT INTO users (id, username, password_hash, role, name, email, specialization) VALUES
-  ('11111111-1111-1111-1111-111111111111', 'headcoach', '$2b$10$Np0xsFrxhx4oUBl6mgPWhemXkYQeyJfBhL6xvyz1iTT7a.UG2Apn6', 'HEAD_COACH', 'Rajesh Kumar', 'rajesh@shuttlecoach.com', 'Advanced Training'),
+  ('11111111-1111-1111-1111-111111111111', 'headcoach', '$2b$10$Np0xsFrxhx4oUBl6mgPWhemXkYQeyJfBhL6xvyz1iTT7a.UG2Apn6', 'HEAD_COACH', 'Sumit Dali', 'sumit@shuttlecoach.com', 'Advanced Training'),
   ('22222222-2222-2222-2222-222222222222', 'assistant1', '$2b$10$Np0xsFrxhx4oUBl6mgPWhemXkYQeyJfBhL6xvyz1iTT7a.UG2Apn6', 'ASSISTANT_COACH', 'Priya Sharma', 'priya@shuttlecoach.com', 'Beginner Training'),
   ('33333333-3333-3333-3333-333333333333', 'assistant2', '$2b$10$Np0xsFrxhx4oUBl6mgPWhemXkYQeyJfBhL6xvyz1iTT7a.UG2Apn6', 'ASSISTANT_COACH', 'Amit Patel', 'amit@shuttlecoach.com', 'Intermediate Training');
 
@@ -183,7 +183,7 @@ INSERT INTO skill_assessments (student_id, cycle_key, recorded_by, scores, is_lo
   (
     '99999999-9999-9999-9999-999999999999',
     'Nov-Dec 2024',
-    'Rajesh Kumar',
+    'Sumit Dali',
     '{
       "forehand": {"Clear": 3, "Drop": 3, "Smash": 4, "Drive": 3, "NetShot": 3, "Lift": 3, "CrossDrop": 3, "Slice": 3, "Push": 3, "Tap": 3},
       "backhand": {"Clear": 3, "Drop": 3, "Smash": 3, "Drive": 3, "NetShot": 3, "Lift": 3, "CrossDrop": 3, "Slice": 2, "Push": 3, "Tap": 3},
@@ -333,7 +333,7 @@ INSERT INTO training_logs (student_id, week_number, cycle_key, session_notes, is
     'Nov-Dec 2024',
     'Excellent technique on all advanced drills. Working on tactical variations and deception. Ready for competition preparation.',
     true,
-    'Rajesh Kumar'
+    'Sumit Dali'
   );
 
 -- ============================================================================

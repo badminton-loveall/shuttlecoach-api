@@ -114,7 +114,7 @@ psql $DATABASE_URL -f src/migrations/000_rollback.sql
 The seed script (`002_seed_data.sql`) creates:
 
 - **3 coaches**:
-  - Head Coach: Rajesh Kumar (username: `headcoach`)
+  - Head Coach: Sumit Dali (username: `headcoach`)
   - Assistant Coach: Priya Sharma (username: `assistant1`)
   - Assistant Coach: Amit Patel (username: `assistant2`)
 

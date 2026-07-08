@@ -45,8 +45,8 @@ export const validateRequest = (schema: ZodSchema) => {
 export const validateQuery = (schema: ZodSchema) => {
   return (req: Request, _res: Response, next: NextFunction): void => {
     try {
-      const validated = schema.parse(req.query);
-      req.query = validated as any;
+      schema.parse(req.query);
+      // Don't reassign req.query since it's read-only
       next();
     } catch (error) {
       if (error instanceof ZodError) {
