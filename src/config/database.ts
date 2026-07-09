@@ -3,16 +3,62 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+/**
+ * Build pg connection config from environment variables.
+ *
+ * Supports two modes:
+ * 1. Explicit vars: PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD
+ *    (preferred — avoids any URL parsing ambiguity with special chars or dotted usernames)
+ * 2. DATABASE_URL connection string (fallback, parsed via URL API)
+ */
+function buildPoolConfig(): PoolConfig {
+  const sslConfig = process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false;
+
+  // Prefer explicit env vars if PGHOST is set
+  if (process.env.PGHOST) {
+    console.log('[DB] Using explicit PG* environment variables');
+    return {
+      host:     process.env.PGHOST,
+      port:     parseInt(process.env.PGPORT || '5432', 10),
+      database: process.env.PGDATABASE || 'postgres',
+      user:     process.env.PGUSER,
+      password: process.env.PGPASSWORD,
+      ssl:      sslConfig,
+    };
+  }
+
+  // Fall back to DATABASE_URL
+  const url = process.env.DATABASE_URL;
+  if (!url) {
+    console.error('[DB] No DATABASE_URL or PGHOST set');
+    return { ssl: sslConfig };
+  }
+
+  try {
+    const parsed = new URL(url);
+    console.log('[DB] Parsed DATABASE_URL — host:', parsed.hostname, 'port:', parsed.port, 'user:', parsed.username);
+    return {
+      host:     parsed.hostname,
+      port:     parseInt(parsed.port || '5432', 10),
+      database: parsed.pathname.replace(/^\//, ''),
+      user:     decodeURIComponent(parsed.username),
+      password: decodeURIComponent(parsed.password),
+      ssl:      sslConfig,
+    };
+  } catch (err) {
+    console.error('[DB] Failed to parse DATABASE_URL:', err);
+    return { connectionString: url, ssl: sslConfig };
+  }
+}
+
 const poolConfig: PoolConfig = {
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-  // Serverless-optimized settings
-  max: 1, // Single connection for serverless (prevent connection pool exhaustion)
+  ...buildPoolConfig(),
+  max: 1,              // Single connection for serverless
   min: 0,
-  idleTimeoutMillis: 10000, // Reduced idle timeout
-  connectionTimeoutMillis: 30000, // Increased timeout for external DB
-  statement_timeout: 30000,
-  query_timeout: 30000,
+  idleTimeoutMillis:      10000,
+  connectionTimeoutMillis: 30000,
+  statement_timeout:      30000,
+  query_timeout:          30000,
 };
 
 // Create a single shared pool instance
