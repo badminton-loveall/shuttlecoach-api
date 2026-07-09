@@ -12,16 +12,33 @@ export const healthCheck = async (_req: Request, res: Response): Promise<void> =
     return acc;
   }, {});
 
+  // Also report optional explicit PG vars
+  const pgVars = {
+    PGHOST:     !!process.env.PGHOST,
+    PGPORT:     !!process.env.PGPORT,
+    PGUSER:     !!process.env.PGUSER,
+    PGPASSWORD: !!process.env.PGPASSWORD,
+    PGDATABASE: !!process.env.PGDATABASE,
+  };
+
   const allConfigured = Object.values(envStatus).every(Boolean);
 
   // Test actual database connectivity
-  let dbStatus: { connected: boolean; latencyMs?: number; error?: string } = { connected: false };
+  let dbStatus: { connected: boolean; latencyMs?: number; error?: string; host?: string } = { connected: false };
   try {
     const start = Date.now();
     await query('SELECT 1');
-    dbStatus = { connected: true, latencyMs: Date.now() - start };
+    dbStatus = {
+      connected: true,
+      latencyMs: Date.now() - start,
+      host: process.env.PGHOST || new URL(process.env.DATABASE_URL || '').hostname,
+    };
   } catch (err: any) {
-    dbStatus = { connected: false, error: err?.message ?? String(err) };
+    dbStatus = {
+      connected: false,
+      error: err?.message ?? String(err),
+      host: process.env.PGHOST || (() => { try { return new URL(process.env.DATABASE_URL || '').hostname; } catch { return 'parse-error'; } })(),
+    };
   }
 
   const healthy = allConfigured && dbStatus.connected;
@@ -32,6 +49,7 @@ export const healthCheck = async (_req: Request, res: Response): Promise<void> =
     uptime: process.uptime(),
     environment: process.env.NODE_ENV || 'development',
     envVarsConfigured: envStatus,
+    pgVars,
     database: dbStatus,
   });
 };
