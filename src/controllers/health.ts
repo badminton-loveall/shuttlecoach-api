@@ -31,13 +31,13 @@ export const healthCheck = async (_req: Request, res: Response): Promise<void> =
     dbStatus = {
       connected: true,
       latencyMs: Date.now() - start,
-      host: process.env.PGHOST || new URL(process.env.DATABASE_URL || '').hostname,
+      host: process.env.PGHOST || 'from DATABASE_URL',
     };
   } catch (err: any) {
     dbStatus = {
       connected: false,
       error: err?.message ?? String(err),
-      host: process.env.PGHOST || (() => { try { return new URL(process.env.DATABASE_URL || '').hostname; } catch { return 'parse-error'; } })(),
+      host: process.env.PGHOST || 'from DATABASE_URL',
     };
   }
 

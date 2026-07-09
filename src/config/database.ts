@@ -4,26 +4,34 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 /**
- * Build pg connection config from environment variables.
+ * Build pg connection config.
  *
- * Supports two modes:
- * 1. Explicit vars: PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD
- *    (preferred — avoids any URL parsing ambiguity with special chars or dotted usernames)
- * 2. DATABASE_URL connection string (fallback, parsed via URL API)
+ * For Supabase pooler (PgBouncer), the username MUST be passed as part of
+ * a connection string — NOT as a separate `user` field. PgBouncer reads the
+ * tenant/project ref from the username in the connection string startup packet.
+ * Using separate host/user fields causes "tenant not found" errors.
  */
 function buildPoolConfig(): PoolConfig {
-  const sslConfig = process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false;
+  const sslConfig = { rejectUnauthorized: false };
 
-  // Prefer explicit env vars if PGHOST is set
-  if (process.env.PGHOST) {
-    console.log('[DB] Using explicit PG* environment variables');
+  // If explicit PG vars are set, build a proper connection string from them
+  // so PgBouncer receives the full username including project ref
+  if (process.env.PGHOST && process.env.PGUSER) {
+    const host = process.env.PGHOST;
+    const port = process.env.PGPORT || '5432';
+    const user = process.env.PGUSER;
+    const password = process.env.PGPASSWORD || '';
+    const database = process.env.PGDATABASE || 'postgres';
+
+    // Encode special chars in password for URL
+    const encodedPassword = encodeURIComponent(password);
+
+    const connectionString = `postgresql://${user}:${encodedPassword}@${host}:${port}/${database}`;
+    console.log('[DB] Using PG* vars as connection string, host:', host, 'user:', user, 'port:', port);
+
     return {
-      host:     process.env.PGHOST,
-      port:     parseInt(process.env.PGPORT || '5432', 10),
-      database: process.env.PGDATABASE || 'postgres',
-      user:     process.env.PGUSER,
-      password: process.env.PGPASSWORD,
-      ssl:      sslConfig,
+      connectionString,
+      ssl: sslConfig,
     };
   }
 
@@ -34,31 +42,21 @@ function buildPoolConfig(): PoolConfig {
     return { ssl: sslConfig };
   }
 
-  try {
-    const parsed = new URL(url);
-    console.log('[DB] Parsed DATABASE_URL — host:', parsed.hostname, 'port:', parsed.port, 'user:', parsed.username);
-    return {
-      host:     parsed.hostname,
-      port:     parseInt(parsed.port || '5432', 10),
-      database: parsed.pathname.replace(/^\//, ''),
-      user:     decodeURIComponent(parsed.username),
-      password: decodeURIComponent(parsed.password),
-      ssl:      sslConfig,
-    };
-  } catch (err) {
-    console.error('[DB] Failed to parse DATABASE_URL:', err);
-    return { connectionString: url, ssl: sslConfig };
-  }
+  console.log('[DB] Using DATABASE_URL');
+  return {
+    connectionString: url,
+    ssl: sslConfig,
+  };
 }
 
 const poolConfig: PoolConfig = {
   ...buildPoolConfig(),
-  max: 1,              // Single connection for serverless
+  max: 1,
   min: 0,
-  idleTimeoutMillis:      10000,
+  idleTimeoutMillis:       10000,
   connectionTimeoutMillis: 30000,
-  statement_timeout:      30000,
-  query_timeout:          30000,
+  statement_timeout:       30000,
+  query_timeout:           30000,
 };
 
 // Create a single shared pool instance
