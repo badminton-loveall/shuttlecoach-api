@@ -1,6 +1,13 @@
 import { z } from 'zod';
 
 /**
+ * Relaxed UUID pattern that accepts any 8-4-4-4-12 hex string.
+ */
+const uuidPattern = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+const uuidString = (fieldName: string) =>
+  z.string().regex(uuidPattern, `Invalid ${fieldName}`);
+
+/**
  * Validation schema for creating a coach
  */
 export const createCoachSchema = z.object({
@@ -26,8 +33,8 @@ export const createCoachSchema = z.object({
  * Validation schema for assigning/unassigning coaches
  */
 export const assignCoachSchema = z.object({
-  studentIds: z.array(z.string().uuid('Invalid student ID')).optional(),
-  batchId: z.string().uuid('Invalid batch ID').optional(),
+  studentIds: z.array(uuidString('student ID')).optional(),
+  batchId: uuidString('batch ID').optional(),
   action: z.enum(['ASSIGN', 'UNASSIGN']),
 });
 

@@ -7,6 +7,15 @@ import feeRoutes from './fees';
 import curriculumRoutes from './curriculum';
 import trainingLogRoutes from './trainingLogs';
 import coachRoutes from './coaches';
+import drillRoutes from './drills';
+import batchRoutes from './batches';
+import skillScoresRoutes from './skillScores';
+import sessionScheduleRoutes from './sessionSchedules';
+import { sessionCalendarRouter } from './sessionSchedules';
+import leaveRequestRoutes from './leaveRequests';
+import attendanceRoutes from './attendance';
+import sessionNotesRoutes from './sessionNotes';
+import analyticsRoutes from './analytics';
 
 const router = Router();
 
@@ -33,5 +42,32 @@ router.use('/training-logs', trainingLogRoutes);
 
 // Coach management routes
 router.use('/coaches', coachRoutes);
+
+// Drill management routes
+router.use('/drills', drillRoutes);
+
+// Batch management routes
+router.use('/batches', batchRoutes);
+
+// Skill scores routes
+router.use('/skill-scores', skillScoresRoutes);
+
+// Attendance routes
+router.use('/attendance', attendanceRoutes);
+
+// Leave request routes
+router.use('/leave-requests', leaveRequestRoutes);
+
+// Session notes routes
+router.use('/session-notes', sessionNotesRoutes);
+
+// Session schedule routes
+router.use('/session-schedules', sessionScheduleRoutes);
+
+// Session calendar route (separate path per design: /api/session-calendar)
+router.use('/session-calendar', sessionCalendarRouter);
+
+// Analytics routes
+router.use('/analytics', analyticsRoutes);
 
 export default router;

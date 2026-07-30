@@ -1,6 +1,13 @@
 import { z } from 'zod';
 
 /**
+ * Relaxed UUID pattern that accepts any 8-4-4-4-12 hex string.
+ */
+const uuidPattern = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+const uuidString = (fieldName: string) =>
+  z.string().regex(uuidPattern, `Invalid ${fieldName}`);
+
+/**
  * Validation schema for skill score (0-4)
  */
 const skillScoreSchema = z
@@ -30,7 +37,7 @@ const skillScoresSchema = z.object({
  * Validation schema for creating a skill assessment
  */
 export const createAssessmentSchema = z.object({
-  studentId: z.string().uuid('Invalid student ID'),
+  studentId: uuidString('student ID'),
   cycleKey: z
     .string()
     .regex(/^[A-Z][a-z]{2}-[A-Z][a-z]{2} \d{4}$/, 'Cycle key must be in format "Jan-Feb 2026"'),
@@ -45,7 +52,7 @@ export const createAssessmentSchema = z.object({
  * Validation schema for query parameters when listing assessments
  */
 export const listAssessmentsQuerySchema = z.object({
-  studentId: z.string().uuid('Invalid student ID').optional(),
+  studentId: uuidString('student ID').optional(),
   cycleKey: z
     .string()
     .regex(/^[A-Z][a-z]{2}-[A-Z][a-z]{2} \d{4}$/, 'Cycle key must be in format "Jan-Feb 2026"')

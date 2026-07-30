@@ -129,6 +129,9 @@ export const listStudents = async (
     const params: any[] = [];
     let paramIndex = 1;
 
+    // Exclude archived students by default
+    conditions.push("status != 'archived'");
+
     // Role-based filtering
     if (req.user.role === UserRole.ASSISTANT_COACH) {
       // Assistant coaches see only assigned students
@@ -297,6 +300,14 @@ export const updateStudent = async (
       return;
     }
 
+    // Archive permission check: only HEAD_COACH can archive students
+    if (req.body.status === 'archived' && req.user.role !== UserRole.HEAD_COACH) {
+      res.status(403).json({
+        error: 'Only head coaches can archive students',
+      });
+      return;
+    }
+
     // Build UPDATE query dynamically based on provided fields
     const updates: string[] = [];
     const params: any[] = [];
@@ -323,6 +334,7 @@ export const updateStudent = async (
       weaknesses: 'weaknesses',
       coachFeedback: 'coach_feedback',
       skillLevel: 'skill_level',
+      status: 'status',
     };
 
     Object.entries(allowedFields).forEach(([camelKey, snakeKey]) => {
@@ -338,6 +350,11 @@ export const updateStudent = async (
       return;
     }
 
+    // When archiving, also set archived_at timestamp
+    if (req.body.status === 'archived') {
+      updates.push(`archived_at = NOW()`);
+    }
+
     // Add student ID as last parameter
     params.push(id);
 
@@ -351,7 +368,7 @@ export const updateStudent = async (
         guardian_name, guardian_phone, baid_number, batch_id, assigned_coach_id,
         profile_photo, height, weight, bmi, blood_group, medical_conditions,
         emergency_contact, strengths, weaknesses, coach_feedback, skill_level,
-        created_at, updated_at`,
+        status, archived_at, created_at, updated_at`,
       params
     );
 
@@ -395,5 +412,7 @@ function mapDatabaseRowToStudent(row: any): Student {
     skillLevel: row.skill_level,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    status: row.status,
+    archivedAt: row.archived_at,
   };
 }

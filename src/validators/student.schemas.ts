@@ -1,6 +1,15 @@
 import { z } from 'zod';
 
 /**
+ * Relaxed UUID pattern that accepts any 8-4-4-4-12 hex string.
+ * PostgreSQL gen_random_uuid() generates RFC 4122 v4 UUIDs, but seed data
+ * may use non-compliant UUIDs. We validate format only, not RFC version bits.
+ */
+const uuidPattern = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+const uuidString = (fieldName: string) =>
+  z.string().regex(uuidPattern, `Invalid ${fieldName}`);
+
+/**
  * Validation schema for creating a student
  */
 export const createStudentSchema = z
@@ -17,24 +26,26 @@ export const createStudentSchema = z
     contactPhone: z
       .string()
       .regex(/^\+?[\d\s\-()]{10,20}$/, 'Invalid phone number format'),
-    email: z.string().email('Invalid email format').optional(),
-    guardianName: z.string().min(2, 'Guardian name must be at least 2 characters').optional(),
+    email: z.string().email('Invalid email format').optional().or(z.literal('')).transform(val => val || undefined),
+    guardianName: z.string().min(2, 'Guardian name must be at least 2 characters').optional().or(z.literal('')).transform(val => val || undefined),
     guardianPhone: z
       .string()
       .regex(/^\+?[\d\s\-()]{10,20}$/, 'Invalid phone number format')
-      .optional(),
-    baidNumber: z.string().max(50).optional(),
-    batchId: z.string().uuid('Invalid batch ID').optional(),
-    assignedCoachId: z.string().uuid('Invalid coach ID').optional(),
-    profilePhoto: z.string().url('Profile photo must be a valid URL').optional(),
+      .optional()
+      .or(z.literal(''))
+      .transform(val => val || undefined),
+    baidNumber: z.string().max(50).optional().or(z.literal('')).transform(val => val || undefined),
+    batchId: uuidString('batch ID').optional().or(z.literal('')).transform(val => val || undefined),
+    assignedCoachId: uuidString('coach ID').optional().or(z.literal('')).transform(val => val || undefined),
+    profilePhoto: z.string().url('Profile photo must be a valid URL').optional().or(z.literal('')).transform(val => val || undefined),
     height: z.number().positive('Height must be positive').max(300, 'Invalid height').optional(),
     weight: z.number().positive('Weight must be positive').max(500, 'Invalid weight').optional(),
-    bloodGroup: z.string().max(10).optional(),
-    medicalConditions: z.string().max(500, 'Medical conditions must be at most 500 characters').optional(),
-    emergencyContact: z.string().max(200).optional(),
+    bloodGroup: z.string().max(10).optional().or(z.literal('')).transform(val => val || undefined),
+    medicalConditions: z.string().max(500, 'Medical conditions must be at most 500 characters').optional().or(z.literal('')).transform(val => val || undefined),
+    emergencyContact: z.string().max(200).optional().or(z.literal('')).transform(val => val || undefined),
     strengths: z.array(z.string()).optional(),
     weaknesses: z.array(z.string()).optional(),
-    coachFeedback: z.string().max(1000, 'Coach feedback must be at most 1000 characters').optional(),
+    coachFeedback: z.string().max(1000, 'Coach feedback must be at most 1000 characters').optional().or(z.literal('')).transform(val => val || undefined),
     skillLevel: z.enum(['Beginner', 'Intermediate', 'Advanced', 'Professional']).optional(),
   })
   .refine(
@@ -74,24 +85,26 @@ export const updateStudentSchema = z
       .string()
       .regex(/^\+?[\d\s\-()]{10,20}$/, 'Invalid phone number format')
       .optional(),
-    email: z.string().email('Invalid email format').optional(),
-    guardianName: z.string().min(2, 'Guardian name must be at least 2 characters').optional(),
+    email: z.string().email('Invalid email format').optional().or(z.literal('')).transform(val => val || undefined),
+    guardianName: z.string().min(2, 'Guardian name must be at least 2 characters').optional().or(z.literal('')).transform(val => val || undefined),
     guardianPhone: z
       .string()
       .regex(/^\+?[\d\s\-()]{10,20}$/, 'Invalid phone number format')
-      .optional(),
-    baidNumber: z.string().max(50).optional(),
-    batchId: z.string().uuid('Invalid batch ID').optional(),
-    assignedCoachId: z.string().uuid('Invalid coach ID').optional(),
-    profilePhoto: z.string().url('Profile photo must be a valid URL').optional(),
+      .optional()
+      .or(z.literal(''))
+      .transform(val => val || undefined),
+    baidNumber: z.string().max(50).optional().or(z.literal('')).transform(val => val || undefined),
+    batchId: uuidString('batch ID').optional().or(z.literal('')).transform(val => val || undefined),
+    assignedCoachId: uuidString('coach ID').optional().or(z.literal('')).transform(val => val || undefined),
+    profilePhoto: z.string().url('Profile photo must be a valid URL').optional().or(z.literal('')).transform(val => val || undefined),
     height: z.number().positive('Height must be positive').max(300, 'Invalid height').optional(),
     weight: z.number().positive('Weight must be positive').max(500, 'Invalid weight').optional(),
-    bloodGroup: z.string().max(10).optional(),
-    medicalConditions: z.string().max(500, 'Medical conditions must be at most 500 characters').optional(),
-    emergencyContact: z.string().max(200).optional(),
+    bloodGroup: z.string().max(10).optional().or(z.literal('')).transform(val => val || undefined),
+    medicalConditions: z.string().max(500, 'Medical conditions must be at most 500 characters').optional().or(z.literal('')).transform(val => val || undefined),
+    emergencyContact: z.string().max(200).optional().or(z.literal('')).transform(val => val || undefined),
     strengths: z.array(z.string()).optional(),
     weaknesses: z.array(z.string()).optional(),
-    coachFeedback: z.string().max(1000, 'Coach feedback must be at most 1000 characters').optional(),
+    coachFeedback: z.string().max(1000, 'Coach feedback must be at most 1000 characters').optional().or(z.literal('')).transform(val => val || undefined),
     skillLevel: z.enum(['Beginner', 'Intermediate', 'Advanced', 'Professional']).optional(),
   })
   .strict();
@@ -100,8 +113,8 @@ export const updateStudentSchema = z
  * Validation schema for query parameters when listing students
  */
 export const listStudentsQuerySchema = z.object({
-  batch: z.string().uuid('Invalid batch ID').optional(),
-  coach: z.string().uuid('Invalid coach ID').optional(),
+  batch: uuidString('batch ID').optional(),
+  coach: uuidString('coach ID').optional(),
   search: z.string().max(100).optional(),
   page: z.string().regex(/^\d+$/).transform(Number).optional(),
   limit: z.string().regex(/^\d+$/).transform(Number).optional(),

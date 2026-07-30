@@ -2,11 +2,11 @@
   "name": "shuttlecoach-api",
   "version": "1.0.0",
   "description": "LoveAll Shuttlecoach Backend API - Badminton Training Management System",
-  "main": "dist/server.js",
+  "main": "dist/src/server.js",
   "scripts": {
     "build": "tsc",
     "vercel-build": "tsc",
-    "start": "node dist/server.js",
+    "start": "node dist/src/server.js",
     "dev": "nodemon --watch src --ext ts --exec ts-node src/server.ts",
     "test": "echo \"Error: no test specified\" && exit 1",
     "migrate": "ts-node src/migrations/run-migrations.ts",

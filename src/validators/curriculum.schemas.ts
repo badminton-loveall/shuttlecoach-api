@@ -1,10 +1,17 @@
 import { z } from 'zod';
 
 /**
+ * Relaxed UUID pattern that accepts any 8-4-4-4-12 hex string.
+ */
+const uuidPattern = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+const uuidString = (fieldName: string) =>
+  z.string().regex(uuidPattern, `Invalid ${fieldName}`);
+
+/**
  * Validation schema for a drill
  */
 const drillSchema = z.object({
-  id: z.string().uuid('Invalid drill ID').optional(),
+  id: uuidString('drill ID').optional(),
   name: z.string().min(2, 'Drill name must be at least 2 characters').max(100),
   description: z.string().max(500, 'Drill description must be at most 500 characters'),
   category: z.string().max(50),
@@ -27,9 +34,9 @@ export const createCurriculumSchema = z.object({
   cycleKey: z
     .string()
     .regex(/^[A-Z][a-z]{2}-[A-Z][a-z]{2} \d{4}$/, 'Cycle key must be in format "Jan-Feb 2026"'),
-  batchId: z.string().uuid('Invalid batch ID').optional(),
-  studentId: z.string().uuid('Invalid student ID').optional(),
-  sourceBatchPlanId: z.string().uuid('Invalid source batch plan ID').optional(),
+  batchId: uuidString('batch ID').optional(),
+  studentId: uuidString('student ID').optional(),
+  sourceBatchPlanId: uuidString('source batch plan ID').optional(),
   weeks: z
     .array(weekPlanSchema)
     .length(8, 'Curriculum must have exactly 8 weeks')
@@ -67,19 +74,19 @@ export const updateCurriculumSchema = z.object({
  * Validation schema for cloning a batch plan
  */
 export const cloneBatchPlanSchema = z.object({
-  batchId: z.string().uuid('Invalid batch ID'),
+  batchId: uuidString('batch ID'),
 });
 
 /**
  * Validation schema for query parameters when listing curriculum plans
  */
 export const listCurriculumQuerySchema = z.object({
-  studentId: z.string().uuid('Invalid student ID').optional(),
+  studentId: uuidString('student ID').optional(),
   cycleKey: z
     .string()
     .regex(/^[A-Z][a-z]{2}-[A-Z][a-z]{2} \d{4}$/, 'Cycle key must be in format "Jan-Feb 2026"')
     .optional(),
-  batchId: z.string().uuid('Invalid batch ID').optional(),
+  batchId: uuidString('batch ID').optional(),
 });
 
 export type CreateCurriculumInput = z.infer<typeof createCurriculumSchema>;

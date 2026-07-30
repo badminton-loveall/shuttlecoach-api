@@ -1,10 +1,17 @@
 import { z } from 'zod';
 
 /**
+ * Relaxed UUID pattern that accepts any 8-4-4-4-12 hex string.
+ */
+const uuidPattern = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+const uuidString = (fieldName: string) =>
+  z.string().regex(uuidPattern, `Invalid ${fieldName}`);
+
+/**
  * Validation schema for creating a fee record
  */
 export const createFeeSchema = z.object({
-  studentId: z.string().uuid('Invalid student ID'),
+  studentId: uuidString('student ID'),
   amount: z.number().positive('Amount must be positive'),
   monthYear: z
     .string()
@@ -41,7 +48,7 @@ export const waiveFeeSchema = z.object({
  * Validation schema for query parameters when listing fees
  */
 export const listFeesQuerySchema = z.object({
-  studentId: z.string().uuid('Invalid student ID').optional(),
+  studentId: uuidString('student ID').optional(),
   status: z.enum(['PAID', 'PENDING', 'OVERDUE', 'WAIVED']).optional(),
   monthYear: z.string().regex(/^\d{4}-\d{2}$/, 'Month year must be in YYYY-MM format').optional(),
 });
