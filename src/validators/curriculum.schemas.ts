@@ -9,9 +9,10 @@ const uuidString = (fieldName: string) =>
 
 /**
  * Validation schema for a drill
+ * Note: Drill IDs use a non-UUID format (e.g. "drill-svc-01", "drill-fh-12")
  */
 const drillSchema = z.object({
-  id: uuidString('drill ID').optional(),
+  id: z.string().min(1, 'Drill ID is required').max(50, 'Drill ID must be at most 50 characters').optional(),
   name: z.string().min(2, 'Drill name must be at least 2 characters').max(100),
   description: z.string().max(500, 'Drill description must be at most 500 characters'),
   category: z.string().max(50),

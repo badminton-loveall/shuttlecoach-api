@@ -12,13 +12,14 @@ export const createBatch = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { name, schedule, assignedCoachId } = req.body;
+    const { name, schedule, assignedCoachId, assigned_coach_id, capacity, skill_level, monthly_fee, days_of_week, start_time, end_time, description } = req.body;
+    const coachId = assignedCoachId || assigned_coach_id || null;
 
     const result = await query(
-      `INSERT INTO batches (name, schedule, assigned_coach_id)
-       VALUES ($1, $2, $3)
-       RETURNING id, name, schedule, assigned_coach_id, is_archived, created_at, updated_at`,
-      [name, schedule || null, assignedCoachId || null]
+      `INSERT INTO batches (name, schedule, assigned_coach_id, capacity, skill_level, monthly_fee, days_of_week, start_time, end_time, description)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       RETURNING id, name, schedule, assigned_coach_id, capacity, skill_level, monthly_fee, days_of_week, start_time, end_time, description, is_archived, created_at, updated_at`,
+      [name, schedule || null, coachId, capacity || null, skill_level || null, monthly_fee || null, days_of_week || null, start_time || null, end_time || null, description || null]
     );
 
     const batch = mapBatchRow(result.rows[0]);
@@ -42,6 +43,8 @@ export const listBatches = async (
     const result = await query(
       `SELECT b.id, b.name, b.schedule, b.assigned_coach_id,
               u.name AS coach_name,
+              b.capacity, b.skill_level, b.monthly_fee, b.days_of_week,
+              b.start_time, b.end_time, b.description,
               b.created_at, b.updated_at
        FROM batches b
        LEFT JOIN users u ON b.assigned_coach_id = u.id
@@ -53,10 +56,17 @@ export const listBatches = async (
       id: row.id,
       name: row.name,
       schedule: row.schedule,
-      assignedCoachId: row.assigned_coach_id,
-      coachName: row.coach_name || null,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
+      assigned_coach_id: row.assigned_coach_id,
+      coach_name: row.coach_name || null,
+      capacity: row.capacity || null,
+      skill_level: row.skill_level || null,
+      monthly_fee: row.monthly_fee ? Number(row.monthly_fee) : null,
+      days_of_week: row.days_of_week || null,
+      start_time: row.start_time || null,
+      end_time: row.end_time || null,
+      description: row.description || null,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
     }));
 
     res.status(200).json({ batches });
@@ -78,20 +88,33 @@ export const updateBatch = async (
   try {
     const { id } = req.params;
 
+    // Map of request body keys to database column names
     const allowedFields: Record<string, string> = {
       name: 'name',
       schedule: 'schedule',
       assignedCoachId: 'assigned_coach_id',
+      assigned_coach_id: 'assigned_coach_id',
+      capacity: 'capacity',
+      skill_level: 'skill_level',
+      monthly_fee: 'monthly_fee',
+      days_of_week: 'days_of_week',
+      start_time: 'start_time',
+      end_time: 'end_time',
+      description: 'description',
     };
 
     const updates: string[] = [];
     const params: any[] = [];
     let paramIndex = 1;
 
-    Object.entries(allowedFields).forEach(([camelKey, snakeKey]) => {
-      if (req.body[camelKey] !== undefined) {
+    Object.entries(allowedFields).forEach(([bodyKey, snakeKey]) => {
+      if (req.body[bodyKey] !== undefined) {
+        // Avoid duplicating assigned_coach_id if both camel and snake are present
+        if (snakeKey === 'assigned_coach_id' && updates.some(u => u.startsWith('assigned_coach_id'))) {
+          return;
+        }
         updates.push(`${snakeKey} = $${paramIndex}`);
-        params.push(req.body[camelKey]);
+        params.push(req.body[bodyKey] || null);
         paramIndex++;
       }
     });
@@ -101,13 +124,16 @@ export const updateBatch = async (
       return;
     }
 
+    // Always update updated_at
+    updates.push(`updated_at = NOW()`);
+
     params.push(id);
 
     const result = await query(
       `UPDATE batches
        SET ${updates.join(', ')}
        WHERE id = $${paramIndex} AND is_archived = false
-       RETURNING id, name, schedule, assigned_coach_id, is_archived, created_at, updated_at`,
+       RETURNING id, name, schedule, assigned_coach_id, capacity, skill_level, monthly_fee, days_of_week, start_time, end_time, description, is_archived, created_at, updated_at`,
       params
     );
 
@@ -156,16 +182,23 @@ export const archiveBatch = async (
 };
 
 /**
- * Helper to map database row to camelCase response
+ * Helper to map database row to response format
  */
 function mapBatchRow(row: any) {
   return {
     id: row.id,
     name: row.name,
     schedule: row.schedule,
-    assignedCoachId: row.assigned_coach_id,
-    isArchived: row.is_archived,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    assigned_coach_id: row.assigned_coach_id,
+    capacity: row.capacity || null,
+    skill_level: row.skill_level || null,
+    monthly_fee: row.monthly_fee ? Number(row.monthly_fee) : null,
+    days_of_week: row.days_of_week || null,
+    start_time: row.start_time || null,
+    end_time: row.end_time || null,
+    description: row.description || null,
+    is_archived: row.is_archived,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
   };
 }
