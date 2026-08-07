@@ -13,7 +13,7 @@ export const login = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { username, password } = req.body;
+    const { username, password, centerSlug } = req.body;
 
     // Validate input
     if (!username || !password) {
@@ -76,6 +76,25 @@ export const login = async (
 
       if (!center.is_active || isExpired) {
         res.status(403).json({ error: 'Center is currently inactive' });
+        return;
+      }
+    }
+
+    // Center-scoped login validation (for branded login pages)
+    if (centerSlug && user.role !== UserRole.ADMIN) {
+      const centerBySlugResult = await query(
+        'SELECT id FROM centers WHERE slug = $1 AND is_active = true',
+        [centerSlug]
+      );
+
+      if (centerBySlugResult.rows.length === 0) {
+        res.status(404).json({ error: 'Center not found' });
+        return;
+      }
+
+      const resolvedCenter = centerBySlugResult.rows[0];
+      if (user.center_id !== resolvedCenter.id) {
+        res.status(403).json({ error: 'You do not belong to this center' });
         return;
       }
     }

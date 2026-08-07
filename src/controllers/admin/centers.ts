@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { query } from '../../config/database';
 import { UserRole } from '../../types';
 import { AuthRequest } from '../../middleware/auth';
+import { validateSlug } from '../../utils/slug';
 
 /**
  * GET /api/admin/centers
@@ -129,6 +130,7 @@ export const updateCenter = async (
       isActive: 'is_active',
       planType: 'plan_type',
       subscriptionExpiresAt: 'subscription_expires_at',
+      slug: 'slug',
     };
 
     const setClauses: string[] = [];
@@ -160,6 +162,24 @@ export const updateCenter = async (
       }
     }
 
+    // If slug is being updated, validate format and check uniqueness
+    if (req.body.slug !== undefined) {
+      const slugValidation = validateSlug(req.body.slug);
+      if (!slugValidation.valid) {
+        res.status(400).json({ error: slugValidation.error });
+        return;
+      }
+
+      const existingSlug = await query(
+        'SELECT id FROM centers WHERE slug = $1 AND id != $2',
+        [req.body.slug, id]
+      );
+      if (existingSlug.rows.length > 0) {
+        res.status(409).json({ error: 'This slug is already taken' });
+        return;
+      }
+    }
+
     // Always update updated_at
     setClauses.push(`updated_at = NOW()`);
 
@@ -170,7 +190,7 @@ export const updateCenter = async (
       `UPDATE centers SET ${setClauses.join(', ')} WHERE id = ${idParam}
        RETURNING id, name, location, contact_phone, contact_email, logo_url,
                  is_active, head_coach_id, plan_type, subscription_expires_at,
-                 created_at, updated_at`,
+                 slug, created_at, updated_at`,
       values
     );
 
@@ -192,6 +212,7 @@ export const updateCenter = async (
       headCoachId: center.head_coach_id,
       planType: center.plan_type,
       subscriptionExpiresAt: center.subscription_expires_at,
+      slug: center.slug,
       createdAt: center.created_at,
       updatedAt: center.updated_at,
     });

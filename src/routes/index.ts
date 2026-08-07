@@ -17,6 +17,7 @@ import leaveRequestRoutes from './leaveRequests';
 import attendanceRoutes from './attendance';
 import sessionNotesRoutes from './sessionNotes';
 import analyticsRoutes from './analytics';
+import { getCenterInfo } from '../controllers/public/centers';
 
 const router = Router();
 
@@ -73,5 +74,8 @@ router.use('/session-calendar', sessionCalendarRouter);
 
 // Analytics routes
 router.use('/analytics', analyticsRoutes);
+
+// Public center info route (no auth)
+router.get('/centers/:slug/info', getCenterInfo);
 
 export default router;

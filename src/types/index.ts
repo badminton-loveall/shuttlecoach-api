@@ -174,6 +174,7 @@ export interface Batch {
 export interface LoginRequest {
   username: string;
   password: string;
+  centerSlug?: string;
 }
 
 export interface LoginResponse {
