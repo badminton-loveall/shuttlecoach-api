@@ -3,9 +3,11 @@ import { authenticate, authorize } from '../middleware/auth';
 import { centerActive } from '../middleware/centerActive';
 import { tenantScope } from '../middleware/tenantScope';
 import { createCoach, listCoaches, assignCoach, toggleFeeAccess, updateCoach } from '../controllers/coaches';
+import { adminResetPassword } from '../controllers/password';
 import { UserRole } from '../types';
 import { validateRequest } from '../middleware/validation';
 import { createCoachSchema, assignCoachSchema } from '../validators/coach.schemas';
+import { adminResetPasswordSchema } from '../validators/password.schemas';
 
 const router = Router();
 
@@ -44,5 +46,11 @@ router.patch('/:id', updateCoach);
  * Assign or unassign students or batch to a coach
  */
 router.patch('/:id/assign', validateRequest(assignCoachSchema), assignCoach);
+
+/**
+ * POST /api/coaches/:id/reset-password
+ * Reset a coach's password (HEAD_COACH or ADMIN only)
+ */
+router.post('/:id/reset-password', validateRequest(adminResetPasswordSchema), adminResetPassword);
 
 export default router;
