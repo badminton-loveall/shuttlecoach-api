@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { authenticate, authorize } from '../middleware/auth';
+import { centerActive } from '../middleware/centerActive';
+import { tenantScope } from '../middleware/tenantScope';
 import { createCoach, listCoaches, assignCoach } from '../controllers/coaches';
 import { UserRole } from '../types';
 import { validateRequest } from '../middleware/validation';
@@ -9,6 +11,8 @@ const router = Router();
 
 // All coach management routes require authentication and HEAD_COACH role
 router.use(authenticate);
+router.use(centerActive);
+router.use(tenantScope);
 router.use(authorize(UserRole.HEAD_COACH));
 
 /**

@@ -47,9 +47,9 @@ function mapLeaveRequestRow(row: any): LeaveRequest {
  * Requirements: 3.1, 3.2
  */
 export async function createLeaveRequest(
-  body: CreateLeaveRequestBody
+  body: CreateLeaveRequestBody & { centerId?: string }
 ): Promise<{ leaveRequest: LeaveRequest } | { error: string; status: number }> {
-  const { studentId, batchId, requestedDate, leaveType, reason } = body;
+  const { studentId, batchId, requestedDate, leaveType, reason, centerId } = body;
 
   // --- Future-date validation (strict: must be after today) ---
   const today = new Date();
@@ -80,10 +80,10 @@ export async function createLeaveRequest(
 
   // --- Insert the leave request ---
   const result = await query(
-    `INSERT INTO leave_requests (student_id, batch_id, requested_date, leave_type, reason)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO leave_requests (student_id, batch_id, requested_date, leave_type, reason, center_id)
+     VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING *`,
-    [studentId, batchId, requestedDate, leaveType, reason || null]
+    [studentId, batchId, requestedDate, leaveType, reason || null, centerId || null]
   );
 
   return { leaveRequest: mapLeaveRequestRow(result.rows[0]) };
@@ -95,16 +95,23 @@ export async function createLeaveRequest(
 
 /**
  * Retrieve leave requests with optional filters.
- * Supports filtering by batch_id, student_id, and status.
+ * Supports filtering by batch_id, student_id, status, and center_id.
  *
  * Requirements: 3.3
  */
 export async function getLeaveRequests(
-  filters: GetLeaveRequestsQuery
+  filters: GetLeaveRequestsQuery & { centerId?: string }
 ): Promise<LeaveRequest[]> {
   const conditions: string[] = [];
   const params: any[] = [];
   let paramIndex = 1;
+
+  // Tenant scoping: filter by center_id
+  if (filters.centerId) {
+    conditions.push(`lr.center_id = $${paramIndex}`);
+    params.push(filters.centerId);
+    paramIndex++;
+  }
 
   if (filters.batchId) {
     conditions.push(`lr.batch_id = $${paramIndex}`);
@@ -151,13 +158,22 @@ export async function getLeaveRequests(
 export async function reviewLeaveRequest(
   id: string,
   status: Exclude<LeaveRequestStatus, 'PENDING'>,
-  reviewedBy: string
+  reviewedBy: string,
+  centerId?: string
 ): Promise<{ leaveRequest: LeaveRequest } | { error: string; status: number }> {
-  // --- Fetch the existing leave request ---
-  const existing = await query(
-    `SELECT * FROM leave_requests WHERE id = $1`,
-    [id]
-  );
+  // --- Fetch the existing leave request (with tenant scoping) ---
+  let existing;
+  if (centerId) {
+    existing = await query(
+      `SELECT * FROM leave_requests WHERE id = $1 AND center_id = $2`,
+      [id, centerId]
+    );
+  } else {
+    existing = await query(
+      `SELECT * FROM leave_requests WHERE id = $1`,
+      [id]
+    );
+  }
 
   if (existing.rows.length === 0) {
     return { error: 'Leave request not found', status: 404 };

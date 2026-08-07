@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { authenticate, authorize } from '../middleware/auth';
+import { centerActive } from '../middleware/centerActive';
+import { tenantScope } from '../middleware/tenantScope';
 import { createDrill, listDrills, updateDrill, archiveDrill } from '../controllers/drills';
 import { UserRole } from '../types';
 import { validateRequest, validateQuery } from '../middleware/validation';
@@ -9,6 +11,8 @@ const router = Router();
 
 // All drill routes require authentication
 router.use(authenticate);
+router.use(centerActive);
+router.use(tenantScope);
 
 /**
  * GET /api/drills

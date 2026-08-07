@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { authenticate, authorize } from '../middleware/auth';
+import { centerActive } from '../middleware/centerActive';
+import { tenantScope } from '../middleware/tenantScope';
 import { createBatch, listBatches, updateBatch, archiveBatch } from '../controllers/batches';
 import { UserRole } from '../types';
 import { validateRequest } from '../middleware/validation';
@@ -9,6 +11,8 @@ const router = Router();
 
 // All batch routes require authentication
 router.use(authenticate);
+router.use(centerActive);
+router.use(tenantScope);
 
 /**
  * GET /api/batches

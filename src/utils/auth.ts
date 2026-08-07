@@ -29,8 +29,18 @@ export const generateToken = (payload: {
   id: string;
   username: string;
   role: UserRole;
+  centerId?: string;
 }): string => {
-  return jwt.sign(payload, config.jwtSecret, {
+  // Build token payload - omit centerId for ADMIN users
+  const tokenPayload: Record<string, any> = {
+    id: payload.id,
+    username: payload.username,
+    role: payload.role,
+  };
+  if (payload.role !== UserRole.ADMIN && payload.centerId) {
+    tokenPayload.centerId = payload.centerId;
+  }
+  return jwt.sign(tokenPayload, config.jwtSecret, {
     expiresIn: '24h',
   });
 };
@@ -40,12 +50,13 @@ export const generateToken = (payload: {
  */
 export const verifyToken = (
   token: string
-): { id: string; username: string; role: UserRole } | null => {
+): { id: string; username: string; role: UserRole; centerId?: string } | null => {
   try {
     const decoded = jwt.verify(token, config.jwtSecret) as {
       id: string;
       username: string;
       role: UserRole;
+      centerId?: string;
     };
     return decoded;
   } catch (error) {

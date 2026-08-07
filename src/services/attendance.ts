@@ -53,7 +53,8 @@ export async function markAttendance(
   batchId: string,
   sessionDate: string,
   records: MarkAttendanceRequestRecord[],
-  markedBy: string
+  markedBy: string,
+  centerId?: string
 ): Promise<MarkAttendanceResult> {
   // Validate session date (7-day window)
   const dateError = validateSessionDate(sessionDate);
@@ -61,11 +62,19 @@ export async function markAttendance(
     throw new Error(dateError);
   }
 
-  // Validate batch exists
-  const batchCheck = await query(
-    'SELECT id FROM batches WHERE id = $1 AND is_archived = false',
-    [batchId]
-  );
+  // Validate batch exists (with tenant scoping)
+  let batchCheck;
+  if (centerId) {
+    batchCheck = await query(
+      'SELECT id FROM batches WHERE id = $1 AND is_archived = false AND center_id = $2',
+      [batchId, centerId]
+    );
+  } else {
+    batchCheck = await query(
+      'SELECT id FROM batches WHERE id = $1 AND is_archived = false',
+      [batchId]
+    );
+  }
   if (batchCheck.rows.length === 0) {
     throw new Error('Batch not found');
   }
@@ -104,14 +113,21 @@ export async function markAttendance(
 
 /**
  * Retrieves attendance records with optional filters for batch_id, student_id,
- * start_date, and end_date.
+ * start_date, end_date, and center_id (tenant scoping).
  */
 export async function getAttendanceRecords(
-  filters: GetAttendanceQuery
+  filters: GetAttendanceQuery & { centerId?: string }
 ): Promise<AttendanceRecord[]> {
   const conditions: string[] = [];
   const params: any[] = [];
   let paramIndex = 1;
+
+  // Tenant scoping: filter by center_id via the batches table
+  if (filters.centerId) {
+    conditions.push(`ar.batch_id IN (SELECT id FROM batches WHERE center_id = $${paramIndex})`);
+    params.push(filters.centerId);
+    paramIndex++;
+  }
 
   if (filters.batchId) {
     conditions.push(`ar.batch_id = $${paramIndex}`);
@@ -164,7 +180,7 @@ export async function getAttendanceRecords(
  * Enforces a maximum 6-month date range for performance.
  */
 export async function getAttendanceStats(
-  filters: GetAttendanceStatsQuery
+  filters: GetAttendanceStatsQuery & { centerId?: string }
 ): Promise<AttendanceStats[]> {
   // Enforce 6-month maximum date range
   if (filters.startDate && filters.endDate) {
@@ -179,6 +195,13 @@ export async function getAttendanceStats(
   const conditions: string[] = [];
   const params: any[] = [];
   let paramIndex = 1;
+
+  // Tenant scoping: filter by center_id via the batches table
+  if (filters.centerId) {
+    conditions.push(`ar.batch_id IN (SELECT id FROM batches WHERE center_id = $${paramIndex})`);
+    params.push(filters.centerId);
+    paramIndex++;
+  }
 
   if (filters.batchId) {
     conditions.push(`ar.batch_id = $${paramIndex}`);

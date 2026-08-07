@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { AuthRequest } from '../middleware/auth';
+import { TenantRequest } from '../middleware/tenantScope';
 import { UserRole } from '../types';
 import { query } from '../config/database';
 import {
@@ -18,7 +18,7 @@ import { generateCalendarEntries } from '../services/calendarEngine';
  * curriculum week mappings for future dates.
  */
 export const createSessionScheduleHandler = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -29,15 +29,20 @@ export const createSessionScheduleHandler = async (
 
     const { batchId, slots, recurrence, cycleStartDate } = req.body;
 
-    // Verify batch exists
-    const batchCheck = await query('SELECT id FROM batches WHERE id = $1', [batchId]);
+    // Verify batch exists (with tenant scoping)
+    let batchCheck;
+    if (req.tenantCenterId) {
+      batchCheck = await query('SELECT id FROM batches WHERE id = $1 AND center_id = $2', [batchId, req.tenantCenterId]);
+    } else {
+      batchCheck = await query('SELECT id FROM batches WHERE id = $1', [batchId]);
+    }
     if (batchCheck.rows.length === 0) {
       res.status(404).json({ error: 'Batch not found' });
       return;
     }
 
     // Create or update schedule
-    const schedule = await createOrUpdateSchedule(batchId, slots, recurrence, cycleStartDate);
+    const schedule = await createOrUpdateSchedule(batchId, slots, recurrence, cycleStartDate, req.tenantCenterId);
 
     // Trigger recomputation of curriculum week mappings for future dates
     await recomputeMappingsOnUpdate(batchId);
@@ -57,7 +62,7 @@ export const createSessionScheduleHandler = async (
  * Allowed roles: ALL authenticated users
  */
 export const getSessionScheduleHandler = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -68,8 +73,13 @@ export const getSessionScheduleHandler = async (
 
     const batchId = req.params.batchId as string;
 
-    // Verify batch exists
-    const batchCheck = await query('SELECT id FROM batches WHERE id = $1', [batchId]);
+    // Verify batch exists (with tenant scoping)
+    let batchCheck;
+    if (req.tenantCenterId) {
+      batchCheck = await query('SELECT id FROM batches WHERE id = $1 AND center_id = $2', [batchId, req.tenantCenterId]);
+    } else {
+      batchCheck = await query('SELECT id FROM batches WHERE id = $1', [batchId]);
+    }
     if (batchCheck.rows.length === 0) {
       res.status(404).json({ error: 'Batch not found' });
       return;
@@ -100,7 +110,7 @@ export const getSessionScheduleHandler = async (
  * For STUDENT role, automatically scopes to their assigned batch.
  */
 export const getSessionCalendarHandler = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -116,9 +126,17 @@ export const getSessionCalendarHandler = async (
 
     if (req.user.role === UserRole.STUDENT) {
       // Students can only view calendar for their own batch
+      const studentConditions = ['id = $1'];
+      const studentParams: any[] = [req.user.id];
+
+      if (req.tenantCenterId) {
+        studentConditions.push('center_id = $2');
+        studentParams.push(req.tenantCenterId);
+      }
+
       const studentResult = await query(
-        `SELECT batch_id FROM students WHERE id = $1`,
-        [req.user.id]
+        `SELECT batch_id FROM students WHERE ${studentConditions.join(' AND ')}`,
+        studentParams
       );
       if (studentResult.rows.length === 0) {
         res.status(404).json({ error: 'Student not found' });
@@ -129,8 +147,18 @@ export const getSessionCalendarHandler = async (
         targetBatchIds = [studentBatchId];
       }
     } else if (batchId) {
-      // Coach specified a batch
-      targetBatchIds = [batchId as string];
+      // Coach specified a batch — verify it belongs to the tenant
+      if (req.tenantCenterId) {
+        const batchCheck = await query(
+          'SELECT id FROM batches WHERE id = $1 AND center_id = $2',
+          [batchId as string, req.tenantCenterId]
+        );
+        if (batchCheck.rows.length > 0) {
+          targetBatchIds = [batchId as string];
+        }
+      } else {
+        targetBatchIds = [batchId as string];
+      }
     } else if (studentId) {
       // Coach querying for a specific student's batch
       const studentResult = await query(
@@ -141,12 +169,20 @@ export const getSessionCalendarHandler = async (
         targetBatchIds = [studentResult.rows[0].batch_id];
       }
     } else {
-      // Coach with no filter - get all assigned batches
-      const batchResult = await query(
-        `SELECT id FROM batches WHERE head_coach_id = $1 OR assistant_coach_id = $1`,
-        [req.user.id]
-      );
-      targetBatchIds = batchResult.rows.map((r: any) => r.id);
+      // Coach with no filter - get all assigned batches (with tenant scoping)
+      if (req.tenantCenterId) {
+        const batchResult = await query(
+          `SELECT id FROM batches WHERE (head_coach_id = $1 OR assistant_coach_id = $1) AND center_id = $2`,
+          [req.user.id, req.tenantCenterId]
+        );
+        targetBatchIds = batchResult.rows.map((r: any) => r.id);
+      } else {
+        const batchResult = await query(
+          `SELECT id FROM batches WHERE head_coach_id = $1 OR assistant_coach_id = $1`,
+          [req.user.id]
+        );
+        targetBatchIds = batchResult.rows.map((r: any) => r.id);
+      }
     }
 
     if (targetBatchIds.length === 0) {

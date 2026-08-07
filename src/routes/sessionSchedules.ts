@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { authenticate, authorize } from '../middleware/auth';
+import { centerActive } from '../middleware/centerActive';
+import { tenantScope } from '../middleware/tenantScope';
 import {
   createSessionScheduleHandler,
   getSessionScheduleHandler,
@@ -16,6 +18,8 @@ const router = Router();
 
 // All session schedule routes require authentication
 router.use(authenticate);
+router.use(centerActive);
+router.use(tenantScope);
 
 /**
  * POST /api/session-schedules
@@ -49,6 +53,8 @@ export default router;
 export const sessionCalendarRouter = Router();
 
 sessionCalendarRouter.use(authenticate);
+sessionCalendarRouter.use(centerActive);
+sessionCalendarRouter.use(tenantScope);
 
 /**
  * GET /api/session-calendar

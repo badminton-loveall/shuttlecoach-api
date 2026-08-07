@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { authenticate, authorize } from '../middleware/auth';
+import { centerActive } from '../middleware/centerActive';
+import { tenantScope } from '../middleware/tenantScope';
 import {
   markAttendanceHandler,
   getAttendanceHandler,
@@ -17,6 +19,8 @@ const router = Router();
 
 // All attendance routes require authentication
 router.use(authenticate);
+router.use(centerActive);
+router.use(tenantScope);
 
 /**
  * POST /api/attendance

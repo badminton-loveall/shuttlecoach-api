@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import { query } from '../config/database';
-import { AuthRequest } from '../middleware/auth';
+import { TenantRequest } from '../middleware/tenantScope';
 import { CurriculumPlan, WeekPlan, UserRole } from '../types';
 
 /**
@@ -9,7 +9,7 @@ import { CurriculumPlan, WeekPlan, UserRole } from '../types';
  * Requires: HEAD_COACH or ASSISTANT_COACH role
  */
 export const createCurriculumPlan = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -66,8 +66,8 @@ export const createCurriculumPlan = async (
     // Insert curriculum plan
     const result = await query(
       `INSERT INTO curriculum_plans (
-        cycle_key, batch_id, student_id, source_batch_plan_id, weeks, is_archived
-      ) VALUES ($1, $2, $3, $4, $5, $6)
+        cycle_key, batch_id, student_id, source_batch_plan_id, weeks, is_archived, center_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
       RETURNING 
         id, cycle_key, batch_id, student_id, source_batch_plan_id, 
         weeks, is_archived, created_at, updated_at`,
@@ -78,6 +78,7 @@ export const createCurriculumPlan = async (
         sourceBatchPlanId || null,
         JSON.stringify(weeks),
         isArchived,
+        req.tenantCenterId || null,
       ]
     );
 
@@ -97,19 +98,27 @@ export const createCurriculumPlan = async (
  * Requires: HEAD_COACH role
  */
 export const cloneBatchPlanToStudents = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
     const { id } = req.params;
 
-    // Fetch the batch plan
+    // Fetch the batch plan (with tenant scoping)
+    const planConditions: string[] = ['id = $1', 'batch_id IS NOT NULL'];
+    const planParams: any[] = [id];
+
+    if (req.tenantCenterId) {
+      planConditions.push(`center_id = $2`);
+      planParams.push(req.tenantCenterId);
+    }
+
     const planResult = await query(
       `SELECT 
         id, cycle_key, batch_id, weeks, is_archived
       FROM curriculum_plans
-      WHERE id = $1 AND batch_id IS NOT NULL`,
-      [id]
+      WHERE ${planConditions.join(' AND ')}`,
+      planParams
     );
 
     if (planResult.rows.length === 0) {
@@ -139,8 +148,8 @@ export const cloneBatchPlanToStudents = async (
       
       return query(
         `INSERT INTO curriculum_plans (
-          cycle_key, student_id, source_batch_plan_id, weeks, is_archived
-        ) VALUES ($1, $2, $3, $4, $5)
+          cycle_key, student_id, source_batch_plan_id, weeks, is_archived, center_id
+        ) VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING 
           id, cycle_key, batch_id, student_id, source_batch_plan_id, 
           weeks, is_archived, created_at, updated_at`,
@@ -150,6 +159,7 @@ export const cloneBatchPlanToStudents = async (
           batchPlan.id,
           weeksValue,
           batchPlan.is_archived,
+          req.tenantCenterId || null,
         ]
       );
     });
@@ -178,7 +188,7 @@ export const cloneBatchPlanToStudents = async (
  * Requires: HEAD_COACH or ASSISTANT_COACH role
  */
 export const getCurriculumPlans = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -193,6 +203,13 @@ export const getCurriculumPlans = async (
     const conditions: string[] = [];
     const params: any[] = [];
     let paramIndex = 1;
+
+    // Tenant scoping: filter by center_id if set
+    if (req.tenantCenterId) {
+      conditions.push(`center_id = $${paramIndex}`);
+      params.push(req.tenantCenterId);
+      paramIndex++;
+    }
 
     if (studentId) {
       conditions.push(`student_id = $${paramIndex}`);
@@ -266,7 +283,7 @@ export const getCurriculumPlans = async (
  * Requires: HEAD_COACH or assigned ASSISTANT_COACH
  */
 export const updateCurriculumPlan = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -277,14 +294,22 @@ export const updateCurriculumPlan = async (
 
     const { id } = req.params;
 
-    // Fetch existing plan
+    // Fetch existing plan (with tenant scoping)
+    const existingConditions: string[] = ['id = $1'];
+    const existingParams: any[] = [id];
+
+    if (req.tenantCenterId) {
+      existingConditions.push('center_id = $2');
+      existingParams.push(req.tenantCenterId);
+    }
+
     const existingResult = await query(
       `SELECT 
         id, cycle_key, batch_id, student_id, source_batch_plan_id, 
         weeks, is_archived, created_at, updated_at
       FROM curriculum_plans
-      WHERE id = $1`,
-      [id]
+      WHERE ${existingConditions.join(' AND ')}`,
+      existingParams
     );
 
     if (existingResult.rows.length === 0) {
@@ -349,11 +374,21 @@ export const updateCurriculumPlan = async (
     // Add plan ID as last parameter
     params.push(id);
 
+    // Build WHERE clause with tenant scoping
+    const whereConditions = [`id = $${paramIndex}`];
+    paramIndex++;
+
+    if (req.tenantCenterId) {
+      whereConditions.push(`center_id = $${paramIndex}`);
+      params.push(req.tenantCenterId);
+      paramIndex++;
+    }
+
     // Execute update
     const result = await query(
       `UPDATE curriculum_plans
       SET ${updates.join(', ')}
-      WHERE id = $${paramIndex}
+      WHERE ${whereConditions.join(' AND ')}
       RETURNING 
         id, cycle_key, batch_id, student_id, source_batch_plan_id, 
         weeks, is_archived, created_at, updated_at`,

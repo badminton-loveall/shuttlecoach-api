@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import { query } from '../config/database';
-import { AuthRequest } from '../middleware/auth';
+import { TenantRequest } from '../middleware/tenantScope';
 
 /**
  * POST /api/batches
@@ -8,7 +8,7 @@ import { AuthRequest } from '../middleware/auth';
  * Requires: HEAD_COACH role
  */
 export const createBatch = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -16,10 +16,10 @@ export const createBatch = async (
     const coachId = assignedCoachId || assigned_coach_id || null;
 
     const result = await query(
-      `INSERT INTO batches (name, schedule, assigned_coach_id, capacity, skill_level, monthly_fee, days_of_week, start_time, end_time, description)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      `INSERT INTO batches (name, schedule, assigned_coach_id, capacity, skill_level, monthly_fee, days_of_week, start_time, end_time, description, center_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING id, name, schedule, assigned_coach_id, capacity, skill_level, monthly_fee, days_of_week, start_time, end_time, description, is_archived, created_at, updated_at`,
-      [name, schedule || null, coachId, capacity || null, skill_level || null, monthly_fee || null, days_of_week || null, start_time || null, end_time || null, description || null]
+      [name, schedule || null, coachId, capacity || null, skill_level || null, monthly_fee || null, days_of_week || null, start_time || null, end_time || null, description || null, req.tenantCenterId || null]
     );
 
     const batch = mapBatchRow(result.rows[0]);
@@ -36,10 +36,23 @@ export const createBatch = async (
  * Requires: HEAD_COACH or ASSISTANT_COACH role
  */
 export const listBatches = async (
-  _req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
+    // Build WHERE clause with tenant scoping
+    const conditions: string[] = ['b.is_archived = false'];
+    const params: any[] = [];
+    let paramIndex = 1;
+
+    if (req.tenantCenterId) {
+      conditions.push(`b.center_id = $${paramIndex}`);
+      params.push(req.tenantCenterId);
+      paramIndex++;
+    }
+
+    const whereClause = `WHERE ${conditions.join(' AND ')}`;
+
     const result = await query(
       `SELECT b.id, b.name, b.schedule, b.assigned_coach_id,
               u.name AS coach_name,
@@ -48,8 +61,9 @@ export const listBatches = async (
               b.created_at, b.updated_at
        FROM batches b
        LEFT JOIN users u ON b.assigned_coach_id = u.id
-       WHERE b.is_archived = false
-       ORDER BY b.name ASC`
+       ${whereClause}
+       ORDER BY b.name ASC`,
+      params
     );
 
     const batches = result.rows.map((row: any) => ({
@@ -82,7 +96,7 @@ export const listBatches = async (
  * Requires: HEAD_COACH role
  */
 export const updateBatch = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -129,10 +143,20 @@ export const updateBatch = async (
 
     params.push(id);
 
+    // Build WHERE clause with tenant scoping
+    const whereConditions = [`id = $${paramIndex}`, 'is_archived = false'];
+    paramIndex++;
+
+    if (req.tenantCenterId) {
+      whereConditions.push(`center_id = $${paramIndex}`);
+      params.push(req.tenantCenterId);
+      paramIndex++;
+    }
+
     const result = await query(
       `UPDATE batches
        SET ${updates.join(', ')}
-       WHERE id = $${paramIndex} AND is_archived = false
+       WHERE ${whereConditions.join(' AND ')}
        RETURNING id, name, schedule, assigned_coach_id, capacity, skill_level, monthly_fee, days_of_week, start_time, end_time, description, is_archived, created_at, updated_at`,
       params
     );
@@ -156,17 +180,26 @@ export const updateBatch = async (
  * Requires: HEAD_COACH role
  */
 export const archiveBatch = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
     const { id } = req.params;
 
+    // Build WHERE clause with tenant scoping
+    const conditions = ['id = $1', 'is_archived = false'];
+    const params: any[] = [id];
+
+    if (req.tenantCenterId) {
+      conditions.push('center_id = $2');
+      params.push(req.tenantCenterId);
+    }
+
     const result = await query(
       `UPDATE batches SET is_archived = true
-       WHERE id = $1 AND is_archived = false
+       WHERE ${conditions.join(' AND ')}
        RETURNING id`,
-      [id]
+      params
     );
 
     if (result.rowCount === 0) {

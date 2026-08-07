@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import { query } from '../config/database';
-import { AuthRequest } from '../middleware/auth';
+import { TenantRequest } from '../middleware/tenantScope';
 import { Student, UserRole } from '../types';
 import { calculateAge } from '../utils/calculations';
 
@@ -10,7 +10,7 @@ import { calculateAge } from '../utils/calculations';
  * Requires: HEAD_COACH or ASSISTANT_COACH role
  */
 export const createStudent = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -61,8 +61,9 @@ export const createStudent = async (
         full_name, date_of_birth, gender, contact_phone, email,
         guardian_name, guardian_phone, baid_number, batch_id, assigned_coach_id,
         profile_photo, height, weight, blood_group, medical_conditions,
-        emergency_contact, strengths, weaknesses, coach_feedback, skill_level
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+        emergency_contact, strengths, weaknesses, coach_feedback, skill_level,
+        center_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
       RETURNING 
         id, full_name, date_of_birth, age, gender, contact_phone, email,
         guardian_name, guardian_phone, baid_number, batch_id, assigned_coach_id,
@@ -90,6 +91,7 @@ export const createStudent = async (
         weaknesses || [],
         coachFeedback || null,
         skillLevel || 'Beginner',
+        req.tenantCenterId || null,
       ]
     );
 
@@ -110,7 +112,7 @@ export const createStudent = async (
  * Authorization: HEAD_COACH sees all, ASSISTANT_COACH sees only assigned students
  */
 export const listStudents = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -131,6 +133,13 @@ export const listStudents = async (
 
     // Exclude archived students by default
     conditions.push("status != 'archived'");
+
+    // Tenant scoping: filter by center_id if set
+    if (req.tenantCenterId) {
+      conditions.push(`center_id = $${paramIndex}`);
+      params.push(req.tenantCenterId);
+      paramIndex++;
+    }
 
     // Role-based filtering
     if (req.user.role === UserRole.ASSISTANT_COACH) {
@@ -208,7 +217,7 @@ export const listStudents = async (
  * Authorization: HEAD_COACH sees all, ASSISTANT_COACH sees only assigned students
  */
 export const getStudent = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -219,6 +228,15 @@ export const getStudent = async (
 
     const { id } = req.params;
 
+    // Build WHERE clause with tenant scoping
+    const conditions: string[] = ['id = $1'];
+    const params: any[] = [id];
+
+    if (req.tenantCenterId) {
+      conditions.push('center_id = $2');
+      params.push(req.tenantCenterId);
+    }
+
     // Fetch student
     const result = await query(
       `SELECT 
@@ -228,8 +246,8 @@ export const getStudent = async (
         emergency_contact, strengths, weaknesses, coach_feedback, skill_level,
         created_at, updated_at
       FROM students
-      WHERE id = $1`,
-      [id]
+      WHERE ${conditions.join(' AND ')}`,
+      params
     );
 
     if (result.rows.length === 0) {
@@ -265,7 +283,7 @@ export const getStudent = async (
  * Authorization: HEAD_COACH can update all, ASSISTANT_COACH can update only assigned students
  */
 export const updateStudent = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -277,9 +295,17 @@ export const updateStudent = async (
     const { id } = req.params;
 
     // First check if student exists and get current data
+    const existingConditions: string[] = ['id = $1'];
+    const existingParams: any[] = [id];
+
+    if (req.tenantCenterId) {
+      existingConditions.push('center_id = $2');
+      existingParams.push(req.tenantCenterId);
+    }
+
     const existingResult = await query(
-      'SELECT id, assigned_coach_id FROM students WHERE id = $1',
-      [id]
+      `SELECT id, assigned_coach_id FROM students WHERE ${existingConditions.join(' AND ')}`,
+      existingParams
     );
 
     if (existingResult.rows.length === 0) {
@@ -358,11 +384,21 @@ export const updateStudent = async (
     // Add student ID as last parameter
     params.push(id);
 
+    // Build WHERE clause with tenant scoping
+    const whereConditions = [`id = $${paramIndex}`];
+    paramIndex++;
+
+    if (req.tenantCenterId) {
+      whereConditions.push(`center_id = $${paramIndex}`);
+      params.push(req.tenantCenterId);
+      paramIndex++;
+    }
+
     // Execute update
     const result = await query(
       `UPDATE students
       SET ${updates.join(', ')}
-      WHERE id = $${paramIndex}
+      WHERE ${whereConditions.join(' AND ')}
       RETURNING 
         id, full_name, date_of_birth, age, gender, contact_phone, email,
         guardian_name, guardian_phone, baid_number, batch_id, assigned_coach_id,

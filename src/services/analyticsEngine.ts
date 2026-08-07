@@ -37,15 +37,26 @@ const SKILL_CATEGORIES = ['forehand', 'backhand', 'return', 'service', 'overhead
 export async function getDrillCompletionStats(
   batchId: string,
   cycleKey: string,
-  weekNumber?: number
+  weekNumber?: number,
+  centerId?: string
 ): Promise<DrillCompletionStats[]> {
-  // Fetch the batch curriculum plan
-  const planResult = await query(
-    `SELECT weeks FROM curriculum_plans
-     WHERE batch_id = $1 AND cycle_key = $2 AND student_id IS NULL
-     LIMIT 1`,
-    [batchId, cycleKey]
-  );
+  // Fetch the batch curriculum plan (with tenant scoping)
+  let planResult;
+  if (centerId) {
+    planResult = await query(
+      `SELECT weeks FROM curriculum_plans
+       WHERE batch_id = $1 AND cycle_key = $2 AND student_id IS NULL AND center_id = $3
+       LIMIT 1`,
+      [batchId, cycleKey, centerId]
+    );
+  } else {
+    planResult = await query(
+      `SELECT weeks FROM curriculum_plans
+       WHERE batch_id = $1 AND cycle_key = $2 AND student_id IS NULL
+       LIMIT 1`,
+      [batchId, cycleKey]
+    );
+  }
 
   if (planResult.rows.length === 0) {
     return [];
@@ -163,7 +174,8 @@ export async function getDrillCompletionStats(
  */
 export async function getTrainingEffectiveness(
   studentId: string,
-  cycleKey: string
+  cycleKey: string,
+  _centerId?: string
 ): Promise<TrainingEffectivenessReport> {
   // Fetch all skill assessments for this student, ordered by recorded_at
   const assessmentsResult = await query(
@@ -493,7 +505,8 @@ export function computePearsonCorrelation(
  * Requirements: 9.1, 9.3, 9.4
  */
 export async function getStudentTrends(
-  studentId: string
+  studentId: string,
+  _centerId?: string
 ): Promise<StudentTrendReport> {
   // 1. Fetch all skill assessments for the student, grouped by cycle
   const assessmentsResult = await query(
@@ -703,7 +716,8 @@ export function parseCycleDateRange(
 export async function getTrainingPatterns(
   batchId: string,
   startDate: string,
-  endDate: string
+  endDate: string,
+  _centerId?: string
 ): Promise<TrainingPatternReport> {
   // 1. Compute category distributions from curriculum plans
   const categoryDistributions = await computeCategoryDistributions(
@@ -1044,12 +1058,21 @@ async function getBatchCycleTotalWeeks(
  * Requirements: 8.1
  */
 export async function getBatchComparison(
-  cycleKey: string
+  cycleKey: string,
+  centerId?: string
 ): Promise<BatchComparisonMetric[]> {
-  // Get all active (non-archived) batches
-  const batchesResult = await query(
-    `SELECT id, name FROM batches WHERE is_archived = false ORDER BY name ASC`
-  );
+  // Get all active (non-archived) batches (with tenant scoping)
+  let batchesResult;
+  if (centerId) {
+    batchesResult = await query(
+      `SELECT id, name FROM batches WHERE is_archived = false AND center_id = $1 ORDER BY name ASC`,
+      [centerId]
+    );
+  } else {
+    batchesResult = await query(
+      `SELECT id, name FROM batches WHERE is_archived = false ORDER BY name ASC`
+    );
+  }
 
   const metrics: BatchComparisonMetric[] = [];
 
@@ -1135,7 +1158,8 @@ export async function getBatchComparison(
  */
 export async function getStudentComparison(
   batchId: string,
-  cycleKey: string
+  cycleKey: string,
+  _centerId?: string
 ): Promise<Array<{
   studentId: string;
   studentName: string;

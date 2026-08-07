@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { AuthRequest } from '../middleware/auth';
+import { TenantRequest } from '../middleware/tenantScope';
 import { ValidationError, createOrUpdateNote, getNotes } from '../services/sessionNotes';
 
 /**
@@ -10,7 +10,7 @@ import { ValidationError, createOrUpdateNote, getNotes } from '../services/sessi
  * Requirements: 17.8, 17.9
  */
 export const createSessionNoteHandler = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -25,7 +25,8 @@ export const createSessionNoteHandler = async (
       batchId,
       sessionDate,
       noteText,
-      req.user.id
+      req.user.id,
+      req.tenantCenterId
     );
 
     res.status(200).json(note);
@@ -51,7 +52,7 @@ export const createSessionNoteHandler = async (
  * Requirements: 17.8, 17.9
  */
 export const getSessionNotesHandler = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -73,7 +74,8 @@ export const getSessionNotesHandler = async (
 
     const notes = await getNotes(
       batchId,
-      Object.keys(dateFilter).length > 0 ? dateFilter : undefined
+      Object.keys(dateFilter).length > 0 ? dateFilter : undefined,
+      req.tenantCenterId
     );
 
     res.status(200).json(notes);

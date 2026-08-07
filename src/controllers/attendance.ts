@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { AuthRequest } from '../middleware/auth';
+import { TenantRequest } from '../middleware/tenantScope';
 import { UserRole } from '../types';
 import {
   markAttendance,
@@ -13,7 +13,7 @@ import {
  * Allowed roles: HEAD_COACH, ASSISTANT_COACH
  */
 export const markAttendanceHandler = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -28,7 +28,8 @@ export const markAttendanceHandler = async (
       batchId,
       sessionDate,
       records,
-      req.user.id
+      req.user.id,
+      req.tenantCenterId
     );
 
     res.status(200).json(result);
@@ -60,7 +61,7 @@ export const markAttendanceHandler = async (
  * Allowed roles: ALL (scoped - STUDENT sees only their own records)
  */
 export const getAttendanceHandler = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -80,6 +81,7 @@ export const getAttendanceHandler = async (
           : (studentId as string | undefined),
       startDate: startDate as string | undefined,
       endDate: endDate as string | undefined,
+      centerId: req.tenantCenterId,
     };
 
     const records = await getAttendanceRecords(filters);
@@ -99,7 +101,7 @@ export const getAttendanceHandler = async (
  * Allowed roles: ALL (scoped - STUDENT sees only their own stats)
  */
 export const getAttendanceStatsHandler = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -115,6 +117,7 @@ export const getAttendanceStatsHandler = async (
       studentId: studentId as string | undefined,
       startDate: startDate as string | undefined,
       endDate: endDate as string | undefined,
+      centerId: req.tenantCenterId,
     };
 
     // For STUDENT role, scope to their own data regardless of query params

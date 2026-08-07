@@ -1,8 +1,24 @@
 // User and Authentication Types
 export enum UserRole {
+  ADMIN = 'ADMIN',
   HEAD_COACH = 'HEAD_COACH',
   ASSISTANT_COACH = 'ASSISTANT_COACH',
   STUDENT = 'STUDENT',
+}
+
+export interface Center {
+  id: string;
+  name: string;
+  location: string;
+  contactPhone?: string;
+  contactEmail?: string;
+  logoUrl?: string;
+  isActive: boolean;
+  headCoachId?: string;
+  planType?: string;
+  subscriptionExpiresAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface User {

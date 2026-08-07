@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { healthCheck } from '../controllers/health';
 import authRoutes from './auth';
+import adminRoutes from './admin';
 import studentRoutes from './students';
 import assessmentRoutes from './assessments';
 import feeRoutes from './fees';
@@ -24,6 +25,9 @@ router.get('/health', healthCheck);
 
 // Authentication routes
 router.use('/auth', authRoutes);
+
+// Admin routes (ADMIN role only — auth + authorize applied internally by admin router)
+router.use('/admin', adminRoutes);
 
 // Student routes
 router.use('/students', studentRoutes);

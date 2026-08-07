@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import { query } from '../config/database';
-import { AuthRequest } from '../middleware/auth';
+import { TenantRequest } from '../middleware/tenantScope';
 import { TrainingLog, UserRole } from '../types';
 
 /**
@@ -9,7 +9,7 @@ import { TrainingLog, UserRole } from '../types';
  * Requires: HEAD_COACH or ASSISTANT_COACH role
  */
 export const createTrainingLog = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -60,8 +60,8 @@ export const createTrainingLog = async (
     // Insert training log
     const result = await query(
       `INSERT INTO training_logs (
-        student_id, week_number, cycle_key, session_notes, is_completed, recorded_by
-      ) VALUES ($1, $2, $3, $4, $5, $6)
+        student_id, week_number, cycle_key, session_notes, is_completed, recorded_by, center_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
       RETURNING 
         id, student_id, week_number, cycle_key, session_notes, 
         is_completed, recorded_by, recorded_at`,
@@ -72,6 +72,7 @@ export const createTrainingLog = async (
         sessionNotes || null,
         isCompleted,
         req.user.username || req.user.id,
+        req.tenantCenterId || null,
       ]
     );
 
@@ -101,7 +102,7 @@ export const createTrainingLog = async (
  * Requires: HEAD_COACH or ASSISTANT_COACH role
  */
 export const getTrainingLogs = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -116,6 +117,13 @@ export const getTrainingLogs = async (
     const conditions: string[] = [];
     const params: any[] = [];
     let paramIndex = 1;
+
+    // Tenant scoping: filter by center_id if set
+    if (req.tenantCenterId) {
+      conditions.push(`center_id = $${paramIndex}`);
+      params.push(req.tenantCenterId);
+      paramIndex++;
+    }
 
     if (studentId) {
       conditions.push(`student_id = $${paramIndex}`);
@@ -181,7 +189,7 @@ export const getTrainingLogs = async (
  * Requires: HEAD_COACH or ASSISTANT_COACH (must be assigned to student)
  */
 export const updateTrainingLog = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -192,14 +200,22 @@ export const updateTrainingLog = async (
 
     const { id } = req.params;
 
-    // Fetch existing log
+    // Fetch existing log (with tenant scoping)
+    const existingConditions: string[] = ['id = $1'];
+    const existingParams: any[] = [id];
+
+    if (req.tenantCenterId) {
+      existingConditions.push('center_id = $2');
+      existingParams.push(req.tenantCenterId);
+    }
+
     const existingResult = await query(
       `SELECT 
         id, student_id, week_number, cycle_key, session_notes, 
         is_completed, recorded_by, recorded_at
       FROM training_logs
-      WHERE id = $1`,
-      [id]
+      WHERE ${existingConditions.join(' AND ')}`,
+      existingParams
     );
 
     if (existingResult.rows.length === 0) {
@@ -250,11 +266,21 @@ export const updateTrainingLog = async (
     // Add log ID as last parameter
     params.push(id);
 
+    // Build WHERE clause with tenant scoping
+    const whereConditions = [`id = $${paramIndex}`];
+    paramIndex++;
+
+    if (req.tenantCenterId) {
+      whereConditions.push(`center_id = $${paramIndex}`);
+      params.push(req.tenantCenterId);
+      paramIndex++;
+    }
+
     // Execute update
     const result = await query(
       `UPDATE training_logs
       SET ${updates.join(', ')}
-      WHERE id = $${paramIndex}
+      WHERE ${whereConditions.join(' AND ')}
       RETURNING 
         id, student_id, week_number, cycle_key, session_notes, 
         is_completed, recorded_by, recorded_at`,

@@ -27,7 +27,7 @@ export const login = async (
 
     // Find user by username
     const result = await query(
-      'SELECT id, username, password_hash, role, name, email, profile_photo, specialization FROM users WHERE username = $1',
+      'SELECT id, username, password_hash, role, name, email, profile_photo, specialization, center_id FROM users WHERE username = $1',
       [username]
     );
 
@@ -56,6 +56,30 @@ export const login = async (
       return;
     }
 
+    // For non-ADMIN users, check center status
+    if (user.role !== UserRole.ADMIN) {
+      const centerResult = await query(
+        `SELECT c.id, c.is_active, c.subscription_expires_at 
+         FROM centers c 
+         INNER JOIN users u ON u.center_id = c.id 
+         WHERE u.id = $1`,
+        [user.id]
+      );
+
+      if (centerResult.rows.length === 0) {
+        res.status(403).json({ error: 'User not associated with a center' });
+        return;
+      }
+
+      const center = centerResult.rows[0];
+      const isExpired = center.subscription_expires_at && new Date(center.subscription_expires_at) < new Date();
+
+      if (!center.is_active || isExpired) {
+        res.status(403).json({ error: 'Center is currently inactive' });
+        return;
+      }
+    }
+
     // Update last_active timestamp
     await query('UPDATE users SET last_active = CURRENT_TIMESTAMP WHERE id = $1', [
       user.id,
@@ -66,6 +90,7 @@ export const login = async (
       id: user.id,
       username: user.username,
       role: user.role as UserRole,
+      ...(user.role !== UserRole.ADMIN && user.center_id ? { centerId: user.center_id } : {}),
     });
 
     // Prepare response (exclude password_hash)

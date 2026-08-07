@@ -20,18 +20,19 @@ export async function createOrUpdateSchedule(
   batchId: string,
   slots: SessionSlot[],
   recurrence: RecurrencePattern,
-  cycleStartDate?: string
+  cycleStartDate?: string,
+  centerId?: string
 ): Promise<SessionSchedule> {
   const result = await query(
-    `INSERT INTO session_schedules (batch_id, slots, recurrence, cycle_start_date)
-     VALUES ($1, $2::jsonb, $3::jsonb, $4)
+    `INSERT INTO session_schedules (batch_id, slots, recurrence, cycle_start_date, center_id)
+     VALUES ($1, $2::jsonb, $3::jsonb, $4, $5)
      ON CONFLICT ON CONSTRAINT uq_session_schedules_batch
      DO UPDATE SET
        slots = EXCLUDED.slots,
        recurrence = EXCLUDED.recurrence,
        cycle_start_date = EXCLUDED.cycle_start_date
      RETURNING id, batch_id, slots, recurrence, cycle_start_date, created_at, updated_at`,
-    [batchId, JSON.stringify(slots), JSON.stringify(recurrence), cycleStartDate || null]
+    [batchId, JSON.stringify(slots), JSON.stringify(recurrence), cycleStartDate || null, centerId || null]
   );
 
   return mapScheduleRow(result.rows[0]);

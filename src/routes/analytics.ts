@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { authenticate, authorize } from '../middleware/auth';
+import { centerActive } from '../middleware/centerActive';
+import { tenantScope } from '../middleware/tenantScope';
 import { UserRole } from '../types';
 import { validateQuery } from '../middleware/validation';
 import {
@@ -22,6 +24,8 @@ const router = Router();
 
 // All analytics routes require authentication
 router.use(authenticate);
+router.use(centerActive);
+router.use(tenantScope);
 
 /**
  * GET /api/analytics/session/:cycleKey

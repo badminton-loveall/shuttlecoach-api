@@ -2,14 +2,14 @@ import { Response } from 'express';
 import { query } from '../config/database';
 import { hashPassword } from '../utils/auth';
 import { UserRole } from '../types';
-import { AuthRequest } from '../middleware/auth';
+import { TenantRequest } from '../middleware/tenantScope';
 
 /**
  * POST /api/coaches
  * Create a new assistant coach account (Head Coach only)
  */
 export const createCoach = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -39,10 +39,10 @@ export const createCoach = async (
     // Hash password
     const passwordHash = await hashPassword(password);
 
-    // Insert new assistant coach
+    // Insert new assistant coach with center_id
     const result = await query(
-      `INSERT INTO users (username, password_hash, role, name, email, profile_photo, specialization, created_at, last_active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      `INSERT INTO users (username, password_hash, role, name, email, profile_photo, specialization, center_id, created_at, last_active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
        RETURNING id, username, role, name, email, profile_photo, specialization, created_at, last_active`,
       [
         username,
@@ -52,6 +52,7 @@ export const createCoach = async (
         email || null,
         profilePhoto || null,
         specialization || null,
+        req.tenantCenterId || null,
       ]
     );
 
@@ -81,10 +82,23 @@ export const createCoach = async (
  * List all assistant coaches with their assignment counts (Head Coach only)
  */
 export const listCoaches = async (
-  _req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
+    // Build WHERE clause with tenant scoping
+    const conditions: string[] = ['u.role = $1'];
+    const params: any[] = [UserRole.ASSISTANT_COACH];
+    let paramIndex = 2;
+
+    if (req.tenantCenterId) {
+      conditions.push(`u.center_id = $${paramIndex}`);
+      params.push(req.tenantCenterId);
+      paramIndex++;
+    }
+
+    const whereClause = `WHERE ${conditions.join(' AND ')}`;
+
     // Fetch all assistant coaches with assignment counts
     const result = await query(
       `SELECT 
@@ -101,13 +115,13 @@ export const listCoaches = async (
         COUNT(DISTINCT s.batch_id) as assigned_batch_count
        FROM users u
        LEFT JOIN students s ON s.assigned_coach_id = u.id
-       WHERE u.role = $1
+       ${whereClause}
        GROUP BY u.id, u.username, u.role, u.name, u.email, u.profile_photo, u.specialization, u.created_at, u.last_active
        ORDER BY u.name ASC`,
-      [UserRole.ASSISTANT_COACH]
+      params
     );
 
-    const coaches = result.rows.map((coach) => ({
+    const coaches = result.rows.map((coach: any) => ({
       id: coach.id,
       username: coach.username,
       role: coach.role,
@@ -135,7 +149,7 @@ export const listCoaches = async (
  * Assign or unassign students or batch to a coach (Head Coach only)
  */
 export const assignCoach = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -158,10 +172,18 @@ export const assignCoach = async (
       return;
     }
 
-    // Verify coach exists and is an assistant coach
+    // Verify coach exists and is an assistant coach (with tenant scoping)
+    const coachConditions = ['id = $1'];
+    const coachParams: any[] = [coachId];
+
+    if (req.tenantCenterId) {
+      coachConditions.push('center_id = $2');
+      coachParams.push(req.tenantCenterId);
+    }
+
     const coachResult = await query(
-      'SELECT id, role FROM users WHERE id = $1',
-      [coachId]
+      `SELECT id, role FROM users WHERE ${coachConditions.join(' AND ')}`,
+      coachParams
     );
 
     if (coachResult.rows.length === 0) {
@@ -182,26 +204,42 @@ export const assignCoach = async (
 
     // Handle batch assignment
     if (batchId) {
-      // Update all students in the batch
-      await query(
-        'UPDATE students SET assigned_coach_id = $1, updated_at = CURRENT_TIMESTAMP WHERE batch_id = $2',
-        [newCoachId, batchId]
-      );
-
-      // Update batch assignment
-      await query(
-        'UPDATE batches SET assigned_coach_id = $1 WHERE id = $2',
-        [newCoachId, batchId]
-      );
+      // Update all students in the batch (with tenant scoping)
+      if (req.tenantCenterId) {
+        await query(
+          'UPDATE students SET assigned_coach_id = $1, updated_at = CURRENT_TIMESTAMP WHERE batch_id = $2 AND center_id = $3',
+          [newCoachId, batchId, req.tenantCenterId]
+        );
+        await query(
+          'UPDATE batches SET assigned_coach_id = $1 WHERE id = $2 AND center_id = $3',
+          [newCoachId, batchId, req.tenantCenterId]
+        );
+      } else {
+        await query(
+          'UPDATE students SET assigned_coach_id = $1, updated_at = CURRENT_TIMESTAMP WHERE batch_id = $2',
+          [newCoachId, batchId]
+        );
+        await query(
+          'UPDATE batches SET assigned_coach_id = $1 WHERE id = $2',
+          [newCoachId, batchId]
+        );
+      }
     }
 
     // Handle individual student assignments
     if (studentIds && Array.isArray(studentIds) && studentIds.length > 0) {
-      const placeholders = studentIds.map((_, index) => `$${index + 2}`).join(', ');
-      await query(
-        `UPDATE students SET assigned_coach_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id IN (${placeholders})`,
-        [newCoachId, ...studentIds]
-      );
+      const placeholders = studentIds.map((_: any, index: number) => `$${index + 2}`).join(', ');
+      if (req.tenantCenterId) {
+        await query(
+          `UPDATE students SET assigned_coach_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id IN (${placeholders}) AND center_id = $${studentIds.length + 2}`,
+          [newCoachId, ...studentIds, req.tenantCenterId]
+        );
+      } else {
+        await query(
+          `UPDATE students SET assigned_coach_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id IN (${placeholders})`,
+          [newCoachId, ...studentIds]
+        );
+      }
     }
 
     res.status(200).json({

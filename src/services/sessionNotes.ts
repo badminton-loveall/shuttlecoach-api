@@ -24,7 +24,8 @@ export async function createOrUpdateNote(
   batchId: string,
   date: string,
   noteText: string,
-  createdBy: string
+  createdBy: string,
+  centerId?: string
 ): Promise<SessionNote> {
   // Validate required fields
   if (!batchId) {
@@ -41,15 +42,15 @@ export async function createOrUpdateNote(
   }
 
   const result = await query(
-    `INSERT INTO session_notes (batch_id, session_date, note_text, created_by)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO session_notes (batch_id, session_date, note_text, created_by, center_id)
+     VALUES ($1, $2, $3, $4, $5)
      ON CONFLICT ON CONSTRAINT uq_session_notes_batch_date
      DO UPDATE SET
        note_text = EXCLUDED.note_text,
        created_by = EXCLUDED.created_by,
        updated_at = CURRENT_TIMESTAMP
      RETURNING id, batch_id, session_date, note_text, created_by, created_at, updated_at`,
-    [batchId, date, noteText.trim(), createdBy]
+    [batchId, date, noteText.trim(), createdBy, centerId || null]
   );
 
   return mapRowToSessionNote(result.rows[0]);
@@ -57,11 +58,12 @@ export async function createOrUpdateNote(
 
 /**
  * Retrieve coach notes for a batch with optional date range filtering.
- * Supports filtering by startDate, endDate, or both.
+ * Supports filtering by startDate, endDate, or both, and center_id for tenant scoping.
  */
 export async function getNotes(
   batchId: string,
-  dateFilter?: DateFilter
+  dateFilter?: DateFilter,
+  centerId?: string
 ): Promise<SessionNote[]> {
   if (!batchId) {
     throw new ValidationError('batchId is required');
@@ -70,6 +72,13 @@ export async function getNotes(
   const conditions: string[] = ['batch_id = $1'];
   const params: any[] = [batchId];
   let paramIndex = 2;
+
+  // Tenant scoping: filter by center_id
+  if (centerId) {
+    conditions.push(`center_id = $${paramIndex}`);
+    params.push(centerId);
+    paramIndex++;
+  }
 
   if (dateFilter?.startDate) {
     conditions.push(`session_date >= $${paramIndex}`);

@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import { query } from '../config/database';
-import { AuthRequest } from '../middleware/auth';
+import { TenantRequest } from '../middleware/tenantScope';
 
 /**
  * POST /api/drills
@@ -8,17 +8,17 @@ import { AuthRequest } from '../middleware/auth';
  * Requires: HEAD_COACH role
  */
 export const createDrill = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
     const { name, description, category } = req.body;
 
     const result = await query(
-      `INSERT INTO drills (name, description, category)
-       VALUES ($1, $2, $3)
+      `INSERT INTO drills (name, description, category, center_id)
+       VALUES ($1, $2, $3, $4)
        RETURNING id, name, description, category, is_archived, created_at, updated_at`,
-      [name, description, category]
+      [name, description, category, req.tenantCenterId || null]
     );
 
     res.status(201).json(result.rows[0]);
@@ -36,7 +36,7 @@ export const createDrill = async (
  * Requires: HEAD_COACH or ASSISTANT_COACH role
  */
 export const listDrills = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -44,6 +44,13 @@ export const listDrills = async (
     const conditions: string[] = ['is_archived = false'];
     const params: any[] = [];
     let paramIndex = 1;
+
+    // Tenant scoping: filter by center_id if set
+    if (req.tenantCenterId) {
+      conditions.push(`center_id = $${paramIndex}`);
+      params.push(req.tenantCenterId);
+      paramIndex++;
+    }
 
     if (category) {
       conditions.push(`category = $${paramIndex}`);
@@ -80,7 +87,7 @@ export const listDrills = async (
  * Requires: HEAD_COACH role
  */
 export const updateDrill = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -111,10 +118,20 @@ export const updateDrill = async (
 
     params.push(id);
 
+    // Build WHERE clause with tenant scoping
+    const whereConditions = [`id = $${paramIndex}`, 'is_archived = false'];
+    paramIndex++;
+
+    if (req.tenantCenterId) {
+      whereConditions.push(`center_id = $${paramIndex}`);
+      params.push(req.tenantCenterId);
+      paramIndex++;
+    }
+
     const result = await query(
       `UPDATE drills
        SET ${updates.join(', ')}
-       WHERE id = $${paramIndex} AND is_archived = false
+       WHERE ${whereConditions.join(' AND ')}
        RETURNING id, name, description, category, is_archived, created_at, updated_at`,
       params
     );
@@ -139,17 +156,26 @@ export const updateDrill = async (
  * Requires: HEAD_COACH role
  */
 export const archiveDrill = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
     const { id } = req.params;
 
+    // Build WHERE clause with tenant scoping
+    const conditions = ['id = $1', 'is_archived = false'];
+    const params: any[] = [id];
+
+    if (req.tenantCenterId) {
+      conditions.push('center_id = $2');
+      params.push(req.tenantCenterId);
+    }
+
     const result = await query(
       `UPDATE drills SET is_archived = true
-       WHERE id = $1 AND is_archived = false
+       WHERE ${conditions.join(' AND ')}
        RETURNING id`,
-      [id]
+      params
     );
 
     if (result.rowCount === 0) {

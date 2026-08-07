@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { AuthRequest } from '../middleware/auth';
+import { TenantRequest } from '../middleware/tenantScope';
 import { UserRole } from '../types';
 import {
   createLeaveRequest,
@@ -21,7 +21,7 @@ import {
  * Requirements: 11.4
  */
 export const createLeaveRequestHandler = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -48,6 +48,7 @@ export const createLeaveRequestHandler = async (
       requestedDate,
       leaveType,
       reason,
+      centerId: req.tenantCenterId,
     });
 
     if ('error' in result) {
@@ -73,7 +74,7 @@ export const createLeaveRequestHandler = async (
  * Requirements: 11.4
  */
 export const getLeaveRequestsHandler = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -96,6 +97,7 @@ export const getLeaveRequestsHandler = async (
       batchId,
       studentId: effectiveStudentId,
       status: status as 'PENDING' | 'APPROVED' | 'REJECTED' | undefined,
+      centerId: req.tenantCenterId,
     });
 
     res.status(200).json(leaveRequests);
@@ -117,7 +119,7 @@ export const getLeaveRequestsHandler = async (
  * Requirements: 11.5
  */
 export const reviewLeaveRequestHandler = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -130,7 +132,7 @@ export const reviewLeaveRequestHandler = async (
     const idStr = id as string;
     const { status } = req.body as { status: 'APPROVED' | 'REJECTED' };
 
-    const result = await reviewLeaveRequest(idStr, status, req.user.id);
+    const result = await reviewLeaveRequest(idStr, status, req.user.id, req.tenantCenterId);
 
     if ('error' in result) {
       res.status(result.status).json({ error: result.error });

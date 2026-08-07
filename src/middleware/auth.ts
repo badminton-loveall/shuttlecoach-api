@@ -8,6 +8,7 @@ export interface AuthRequest extends Request {
     id: string;
     username: string;
     role: UserRole;
+    centerId?: string;
   };
 }
 
@@ -35,7 +36,12 @@ export const authenticate = (
       return;
     }
 
-    req.user = decoded;
+    req.user = {
+      id: decoded.id,
+      username: decoded.username,
+      role: decoded.role,
+      centerId: decoded.centerId,
+    };
     next();
   } catch (error) {
     res.status(401).json({ error: 'Authentication failed' });

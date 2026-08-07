@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import { query } from '../config/database';
-import { AuthRequest } from '../middleware/auth';
+import { TenantRequest } from '../middleware/tenantScope';
 import { FeeRecord, FeeStatus, PaymentMethod } from '../types';
 
 /**
@@ -9,7 +9,7 @@ import { FeeRecord, FeeStatus, PaymentMethod } from '../types';
  * Requires: HEAD_COACH role
  */
 export const createFee = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -54,8 +54,8 @@ export const createFee = async (
     // Insert fee record into database
     const result = await query(
       `INSERT INTO fee_records (
-        student_id, amount, month_year, due_date, status, notes
-      ) VALUES ($1, $2, $3, $4, $5, $6)
+        student_id, amount, month_year, due_date, status, notes, center_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
       RETURNING 
         id, student_id, amount, month_year, due_date, paid_date,
         status, payment_method, transaction_ref, notes,
@@ -67,6 +67,7 @@ export const createFee = async (
         dueDate,
         FeeStatus.PENDING, // New fees start as PENDING
         notes || null,
+        req.tenantCenterId || null,
       ]
     );
 
@@ -87,7 +88,7 @@ export const createFee = async (
  * Authorization: HEAD_COACH sees all, ASSISTANT_COACH sees only assigned students, STUDENT sees only own fees
  */
 export const listFees = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -102,6 +103,13 @@ export const listFees = async (
     const conditions: string[] = [];
     const params: any[] = [];
     let paramIndex = 1;
+
+    // Tenant scoping: filter by center_id if set
+    if (req.tenantCenterId) {
+      conditions.push(`center_id = $${paramIndex}`);
+      params.push(req.tenantCenterId);
+      paramIndex++;
+    }
 
     // Role-based filtering
     if (req.user.role === 'ASSISTANT_COACH') {
@@ -182,7 +190,7 @@ export const listFees = async (
  * Requires: HEAD_COACH role
  */
 export const markFeePaid = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -210,10 +218,18 @@ export const markFeePaid = async (
       return;
     }
 
-    // Check if fee record exists
+    // Check if fee record exists (with tenant scoping)
+    const existingConditions: string[] = ['id = $1'];
+    const existingParams: any[] = [id];
+
+    if (req.tenantCenterId) {
+      existingConditions.push('center_id = $2');
+      existingParams.push(req.tenantCenterId);
+    }
+
     const existingResult = await query(
-      'SELECT id, status FROM fee_records WHERE id = $1',
-      [id]
+      `SELECT id, status FROM fee_records WHERE ${existingConditions.join(' AND ')}`,
+      existingParams
     );
 
     if (existingResult.rows.length === 0) {
@@ -238,7 +254,22 @@ export const markFeePaid = async (
       return;
     }
 
-    // Update fee record
+    // Update fee record (with tenant scoping in WHERE)
+    const updateConditions: string[] = ['id = $6'];
+    const updateParams: any[] = [
+      paidDate,
+      FeeStatus.PAID,
+      paymentMethod,
+      transactionRef || null,
+      notes || null,
+      id,
+    ];
+
+    if (req.tenantCenterId) {
+      updateConditions.push(`center_id = $7`);
+      updateParams.push(req.tenantCenterId);
+    }
+
     const result = await query(
       `UPDATE fee_records
       SET 
@@ -247,19 +278,12 @@ export const markFeePaid = async (
         payment_method = $3,
         transaction_ref = $4,
         notes = $5
-      WHERE id = $6
+      WHERE ${updateConditions.join(' AND ')}
       RETURNING 
         id, student_id, amount, month_year, due_date, paid_date,
         status, payment_method, transaction_ref, notes,
         created_at, updated_at`,
-      [
-        paidDate,
-        FeeStatus.PAID,
-        paymentMethod,
-        transactionRef || null,
-        notes || null,
-        id,
-      ]
+      updateParams
     );
 
     const feeRecord = mapDatabaseRowToFeeRecord(result.rows[0]);
@@ -278,7 +302,7 @@ export const markFeePaid = async (
  * Requires: HEAD_COACH role
  */
 export const waiveFee = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -293,10 +317,18 @@ export const waiveFee = async (
       return;
     }
 
-    // Check if fee record exists
+    // Check if fee record exists (with tenant scoping)
+    const existingConditions: string[] = ['id = $1'];
+    const existingParams: any[] = [id];
+
+    if (req.tenantCenterId) {
+      existingConditions.push('center_id = $2');
+      existingParams.push(req.tenantCenterId);
+    }
+
     const existingResult = await query(
-      'SELECT id, status FROM fee_records WHERE id = $1',
-      [id]
+      `SELECT id, status FROM fee_records WHERE ${existingConditions.join(' AND ')}`,
+      existingParams
     );
 
     if (existingResult.rows.length === 0) {
@@ -321,22 +353,30 @@ export const waiveFee = async (
       return;
     }
 
-    // Update fee record
+    // Update fee record (with tenant scoping in WHERE)
+    const updateConditions: string[] = ['id = $3'];
+    const updateParams: any[] = [
+      FeeStatus.WAIVED,
+      reason,
+      id,
+    ];
+
+    if (req.tenantCenterId) {
+      updateConditions.push(`center_id = $4`);
+      updateParams.push(req.tenantCenterId);
+    }
+
     const result = await query(
       `UPDATE fee_records
       SET 
         status = $1,
         notes = $2
-      WHERE id = $3
+      WHERE ${updateConditions.join(' AND ')}
       RETURNING 
         id, student_id, amount, month_year, due_date, paid_date,
         status, payment_method, transaction_ref, notes,
         created_at, updated_at`,
-      [
-        FeeStatus.WAIVED,
-        reason,
-        id,
-      ]
+      updateParams
     );
 
     const feeRecord = mapDatabaseRowToFeeRecord(result.rows[0]);

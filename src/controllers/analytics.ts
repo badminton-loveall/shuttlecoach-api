@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { AuthRequest } from '../middleware/auth';
+import { TenantRequest } from '../middleware/tenantScope';
 import { UserRole } from '../types';
 import {
   getDrillCompletionStats,
@@ -20,7 +20,7 @@ import {
  * Requirements: 12.1
  */
 export const getDrillCompletionHandler = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -40,7 +40,8 @@ export const getDrillCompletionHandler = async (
     const stats = await getDrillCompletionStats(
       batchId as string,
       decodeURIComponent(cycleKey as string),
-      weekNumber ? parseInt(weekNumber as string, 10) : undefined
+      weekNumber ? parseInt(weekNumber as string, 10) : undefined,
+      req.tenantCenterId
     );
 
 
@@ -63,7 +64,7 @@ export const getDrillCompletionHandler = async (
  * Requirements: 12.2, 12.8
  */
 export const getEffectivenessHandler = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -90,7 +91,8 @@ export const getEffectivenessHandler = async (
 
     const report = await getTrainingEffectiveness(
       studentId as string,
-      cycleKey as string
+      cycleKey as string,
+      req.tenantCenterId
     );
 
     res.status(200).json(report);
@@ -112,7 +114,7 @@ export const getEffectivenessHandler = async (
  * Requirements: 12.3
  */
 export const getBatchComparisonHandler = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -128,7 +130,7 @@ export const getBatchComparisonHandler = async (
       return;
     }
 
-    const batches = await getBatchComparison(cycleKey as string);
+    const batches = await getBatchComparison(cycleKey as string, req.tenantCenterId);
 
     res.status(200).json({ batches });
   } catch (error) {
@@ -149,7 +151,7 @@ export const getBatchComparisonHandler = async (
  * Requirements: 12.4
  */
 export const getStudentComparisonHandler = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -172,7 +174,8 @@ export const getStudentComparisonHandler = async (
 
     const students = await getStudentComparison(
       batchId as string,
-      cycleKey as string
+      cycleKey as string,
+      req.tenantCenterId
     );
 
     res.status(200).json({ students });
@@ -192,7 +195,7 @@ export const getStudentComparisonHandler = async (
  * Requirements: 12.5, 12.8
  */
 export const getStudentTrendsHandler = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -211,7 +214,7 @@ export const getStudentTrendsHandler = async (
       return;
     }
 
-    const report = await getStudentTrends(studentId as string);
+    const report = await getStudentTrends(studentId as string, req.tenantCenterId);
 
     res.status(200).json(report);
   } catch (error) {
@@ -232,7 +235,7 @@ export const getStudentTrendsHandler = async (
  * Requirements: 12.6
  */
 export const getTrainingPatternsHandler = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -261,7 +264,8 @@ export const getTrainingPatternsHandler = async (
     const report = await getTrainingPatterns(
       batchId as string,
       startDate as string,
-      endDate as string
+      endDate as string,
+      req.tenantCenterId
     );
 
     res.status(200).json({ report });
