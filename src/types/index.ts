@@ -183,6 +183,48 @@ export interface LoginResponse {
   role: UserRole;
 }
 
+// Multi-Center Membership Types
+
+export interface UserCenterMembership {
+  id: string;
+  userId: string;
+  centerId: string;
+  role: UserRole;
+  canAccessFees: boolean;
+  createdAt: Date;
+}
+
+export interface SlugChangeRequest {
+  id: string;
+  centerId: string;
+  requestedSlug: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  requestedBy: string;
+  reviewedBy?: string;
+  reviewedAt?: Date;
+  createdAt: Date;
+}
+
+export interface CenterMembership {
+  centerId: string;
+  centerName: string;
+  role: UserRole;
+  canAccessFees: boolean;
+}
+
+export interface LoginResponseMultiCenter {
+  token: string;
+  user: Omit<User, 'passwordHash'>;
+  memberships: Array<{
+    centerId: string;
+    centerName: string;
+    role: UserRole;
+    canAccessFees: boolean;
+  }>;
+  activeCenterId: string;
+  activeRole: UserRole;
+}
+
 export interface AuthenticatedRequest extends Request {
   user?: {
     id: string;

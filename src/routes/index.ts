@@ -17,6 +17,8 @@ import leaveRequestRoutes from './leaveRequests';
 import attendanceRoutes from './attendance';
 import sessionNotesRoutes from './sessionNotes';
 import analyticsRoutes from './analytics';
+import membershipRoutes from './memberships';
+import { slugChangeRequestRouter, adminSlugChangeRequestRouter } from './slugChangeRequests';
 import { getCenterInfo } from '../controllers/public/centers';
 
 const router = Router();
@@ -74,6 +76,15 @@ router.use('/session-calendar', sessionCalendarRouter);
 
 // Analytics routes
 router.use('/analytics', analyticsRoutes);
+
+// Membership routes
+router.use('/memberships', membershipRoutes);
+
+// Slug change request routes (HEAD_COACH submission)
+router.use('/slug-change-requests', slugChangeRequestRouter);
+
+// Admin slug change request routes (ADMIN approval/rejection)
+router.use('/admin/slug-change-requests', adminSlugChangeRequestRouter);
 
 // Public center info route (no auth)
 router.get('/centers/:slug/info', getCenterInfo);

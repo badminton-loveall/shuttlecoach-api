@@ -10,6 +10,7 @@ import {
 import { assignCoach, unassignCoach } from '../controllers/admin/coachAssignment';
 import { toggleCenterActivation } from '../controllers/admin/centerActivation';
 import { getDashboard } from '../controllers/admin/dashboard';
+import { inviteCoach, resetCoachPassword } from '../controllers/admin/coachActions';
 
 const router = Router();
 
@@ -64,5 +65,17 @@ router.post('/centers/:id/unassign-coach', unassignCoach);
  * Activate or deactivate a center
  */
 router.post('/centers/:id/activate', toggleCenterActivation);
+
+/**
+ * POST /api/admin/centers/:id/invite-coach
+ * Send invite email to the center's head coach
+ */
+router.post('/centers/:id/invite-coach', inviteCoach);
+
+/**
+ * POST /api/admin/centers/:id/reset-coach-password
+ * Generate a password reset token and send email to head coach
+ */
+router.post('/centers/:id/reset-coach-password', resetCoachPassword);
 
 export default router;

@@ -12,6 +12,7 @@
     "test:watch": "jest --watch",
     "migrate": "ts-node src/migrations/run-migrations.ts",
     "migrate:multi-center": "ts-node src/scripts/run-migration.ts",
+    "migrate:memberships": "ts-node src/scripts/run-membership-migration.ts",
     "migrate:rollback": "psql $DATABASE_URL -f src/migrations/000_rollback.sql"
   },
   "keywords": [

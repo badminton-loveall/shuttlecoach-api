@@ -1,12 +1,16 @@
 import { Request, Response } from 'express';
 import { query } from '../config/database';
 import { comparePassword, generateToken } from '../utils/auth';
-import { LoginRequest, LoginResponse, User, UserRole } from '../types';
+import { getMembershipsByUserId } from '../services/membershipService';
+import { LoginRequest, LoginResponseMultiCenter, User, UserRole, CenterMembership } from '../types';
 import { AuthRequest } from '../middleware/auth';
 
 /**
  * POST /api/auth/login
- * Authenticate user with username and password, return JWT token
+ * Authenticate user with username and password, return JWT token.
+ * Supports multi-center memberships: returns all memberships and resolves
+ * the active center (from centerSlug or earliest membership).
+ * ADMIN users bypass membership logic entirely.
  */
 export const login = async (
   req: Request<{}, {}, LoginRequest>,
@@ -56,34 +60,62 @@ export const login = async (
       return;
     }
 
-    // For non-ADMIN users, check center status
-    if (user.role !== UserRole.ADMIN) {
-      const centerResult = await query(
-        `SELECT c.id, c.is_active, c.subscription_expires_at 
-         FROM centers c 
-         INNER JOIN users u ON u.center_id = c.id 
-         WHERE u.id = $1`,
-        [user.id]
-      );
+    // Update last_active timestamp
+    await query('UPDATE users SET last_active = CURRENT_TIMESTAMP WHERE id = $1', [
+      user.id,
+    ]);
 
-      if (centerResult.rows.length === 0) {
-        res.status(403).json({ error: 'User not associated with a center' });
-        return;
-      }
+    // --- ADMIN bypass: no membership logic ---
+    if (user.role === UserRole.ADMIN) {
+      const token = generateToken({
+        id: user.id,
+        username: user.username,
+        role: UserRole.ADMIN,
+      });
 
-      const center = centerResult.rows[0];
-      const isExpired = center.subscription_expires_at && new Date(center.subscription_expires_at) < new Date();
+      const userResponse: Omit<User, 'passwordHash'> = {
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        name: user.name,
+        email: user.email,
+        profilePhoto: user.profile_photo,
+        specialization: user.specialization,
+        canAccessFees: true,
+        createdAt: user.created_at,
+        lastActive: new Date(),
+      };
 
-      if (!center.is_active || isExpired) {
-        res.status(403).json({ error: 'Center is currently inactive' });
-        return;
-      }
+      const response: LoginResponseMultiCenter = {
+        token,
+        user: userResponse,
+        memberships: [],
+        activeCenterId: '',
+        activeRole: UserRole.ADMIN,
+      };
+
+      console.log('[LOGIN] Login successful for ADMIN user:', username);
+      res.status(200).json(response);
+      return;
     }
 
-    // Center-scoped login validation (for branded login pages)
-    if (centerSlug && user.role !== UserRole.ADMIN) {
+    // --- Non-ADMIN: Multi-center membership flow ---
+
+    // Query all memberships for this user (ordered by created_at ASC)
+    const memberships: CenterMembership[] = await getMembershipsByUserId(user.id);
+
+    if (memberships.length === 0) {
+      res.status(403).json({ error: 'User not associated with a center' });
+      return;
+    }
+
+    let activeCenterId: string;
+    let activeRole: UserRole;
+
+    if (centerSlug) {
+      // Branded login: find membership matching the provided slug
       const centerBySlugResult = await query(
-        'SELECT id FROM centers WHERE slug = $1 AND is_active = true',
+        'SELECT id FROM centers WHERE slug = $1',
         [centerSlug]
       );
 
@@ -92,39 +124,65 @@ export const login = async (
         return;
       }
 
-      const resolvedCenter = centerBySlugResult.rows[0];
-      if (user.center_id !== resolvedCenter.id) {
+      const slugCenterId = centerBySlugResult.rows[0].id;
+      const matchingMembership = memberships.find(m => m.centerId === slugCenterId);
+
+      if (!matchingMembership) {
         res.status(403).json({ error: 'You do not belong to this center' });
         return;
       }
+
+      activeCenterId = matchingMembership.centerId;
+      activeRole = matchingMembership.role;
+    } else {
+      // No slug: default to earliest membership (first in list, already ordered by created_at ASC)
+      activeCenterId = memberships[0].centerId;
+      activeRole = memberships[0].role;
     }
 
-    // Update last_active timestamp
-    await query('UPDATE users SET last_active = CURRENT_TIMESTAMP WHERE id = $1', [
-      user.id,
-    ]);
+    // Verify active center is active and not expired
+    const centerCheckResult = await query(
+      'SELECT id, is_active, subscription_expires_at FROM centers WHERE id = $1',
+      [activeCenterId]
+    );
 
-    // Generate JWT token (24h expiration)
+    if (centerCheckResult.rows.length === 0) {
+      res.status(403).json({ error: 'Center not found' });
+      return;
+    }
+
+    const activeCenter = centerCheckResult.rows[0];
+    const isExpired =
+      activeCenter.subscription_expires_at &&
+      new Date(activeCenter.subscription_expires_at) < new Date();
+
+    if (!activeCenter.is_active || isExpired) {
+      res.status(403).json({ error: 'Center is currently inactive' });
+      return;
+    }
+
+    // Issue JWT with active center context
     const token = generateToken({
       id: user.id,
       username: user.username,
-      role: user.role as UserRole,
-      ...(user.role !== UserRole.ADMIN && user.center_id ? { centerId: user.center_id } : {}),
+      role: activeRole,
+      centerId: activeCenterId,
     });
 
-    // Derive canAccessFees based on role
+    // Derive canAccessFees from the active membership
+    const activeMembership = memberships.find(m => m.centerId === activeCenterId);
     const canAccessFees =
-      user.role === UserRole.ADMIN || user.role === UserRole.HEAD_COACH
+      activeRole === UserRole.HEAD_COACH
         ? true
-        : user.role === UserRole.ASSISTANT_COACH
-          ? !!user.can_access_fees
+        : activeRole === UserRole.ASSISTANT_COACH
+          ? !!(activeMembership?.canAccessFees)
           : false;
 
-    // Prepare response (exclude password_hash)
+    // Prepare user response (exclude password_hash)
     const userResponse: Omit<User, 'passwordHash'> = {
       id: user.id,
       username: user.username,
-      role: user.role,
+      role: activeRole,
       name: user.name,
       email: user.email,
       profilePhoto: user.profile_photo,
@@ -134,13 +192,20 @@ export const login = async (
       lastActive: new Date(),
     };
 
-    const response: LoginResponse = {
+    const response: LoginResponseMultiCenter = {
       token,
       user: userResponse,
-      role: user.role,
+      memberships: memberships.map(m => ({
+        centerId: m.centerId,
+        centerName: m.centerName,
+        role: m.role,
+        canAccessFees: m.canAccessFees,
+      })),
+      activeCenterId,
+      activeRole,
     };
 
-    console.log('[LOGIN] Login successful for user:', username);
+    console.log('[LOGIN] Login successful for user:', username, 'active center:', activeCenterId);
     res.status(200).json(response);
   } catch (error) {
     console.error('[LOGIN] Login error:', error);
