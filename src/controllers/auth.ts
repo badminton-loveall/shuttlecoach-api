@@ -27,7 +27,7 @@ export const login = async (
 
     // Find user by username
     const result = await query(
-      'SELECT id, username, password_hash, role, name, email, profile_photo, specialization, center_id FROM users WHERE username = $1',
+      'SELECT id, username, password_hash, role, name, email, profile_photo, specialization, center_id, can_access_fees FROM users WHERE username = $1',
       [username]
     );
 
@@ -93,6 +93,14 @@ export const login = async (
       ...(user.role !== UserRole.ADMIN && user.center_id ? { centerId: user.center_id } : {}),
     });
 
+    // Derive canAccessFees based on role
+    const canAccessFees =
+      user.role === UserRole.ADMIN || user.role === UserRole.HEAD_COACH
+        ? true
+        : user.role === UserRole.ASSISTANT_COACH
+          ? !!user.can_access_fees
+          : false;
+
     // Prepare response (exclude password_hash)
     const userResponse: Omit<User, 'passwordHash'> = {
       id: user.id,
@@ -102,6 +110,7 @@ export const login = async (
       email: user.email,
       profilePhoto: user.profile_photo,
       specialization: user.specialization,
+      canAccessFees,
       createdAt: user.created_at,
       lastActive: new Date(),
     };

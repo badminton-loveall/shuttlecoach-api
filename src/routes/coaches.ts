@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { authenticate, authorize } from '../middleware/auth';
 import { centerActive } from '../middleware/centerActive';
 import { tenantScope } from '../middleware/tenantScope';
-import { createCoach, listCoaches, assignCoach } from '../controllers/coaches';
+import { createCoach, listCoaches, assignCoach, toggleFeeAccess, updateCoach } from '../controllers/coaches';
 import { UserRole } from '../types';
 import { validateRequest } from '../middleware/validation';
 import { createCoachSchema, assignCoachSchema } from '../validators/coach.schemas';
@@ -26,6 +26,18 @@ router.post('/', validateRequest(createCoachSchema), createCoach);
  * List all assistant coaches with assignment counts
  */
 router.get('/', listCoaches);
+
+/**
+ * PATCH /api/coaches/:id/fee-access
+ * Toggle fee access for a coach
+ */
+router.patch('/:id/fee-access', toggleFeeAccess);
+
+/**
+ * PATCH /api/coaches/:id
+ * Update coach profile information
+ */
+router.patch('/:id', updateCoach);
 
 /**
  * PATCH /api/coaches/:id/assign

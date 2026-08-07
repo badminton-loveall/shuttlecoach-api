@@ -30,6 +30,7 @@ export interface User {
   email?: string;
   profilePhoto?: string;
   specialization?: string;
+  canAccessFees?: boolean;
   createdAt: Date;
   lastActive: Date;
 }

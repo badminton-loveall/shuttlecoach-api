@@ -78,6 +78,85 @@ export const createCoach = async (
 };
 
 /**
+ * PATCH /api/coaches/:id
+ * Update coach profile information (Head Coach only)
+ */
+export const updateCoach = async (
+  req: TenantRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+
+    const allowedFields: Record<string, string> = {
+      name: 'name',
+      email: 'email',
+      specialization: 'specialization',
+      profilePhoto: 'profile_photo',
+    };
+
+    const updates: string[] = [];
+    const params: any[] = [];
+    let paramIndex = 1;
+
+    for (const [bodyKey, dbColumn] of Object.entries(allowedFields)) {
+      if (req.body[bodyKey] !== undefined) {
+        updates.push(`${dbColumn} = $${paramIndex}`);
+        params.push(req.body[bodyKey] || null);
+        paramIndex++;
+      }
+    }
+
+    if (updates.length === 0) {
+      res.status(400).json({ error: 'No valid fields to update' });
+      return;
+    }
+
+    params.push(id);
+
+    // Build WHERE clause with tenant scoping
+    const whereConditions = [`id = $${paramIndex}`];
+    paramIndex++;
+
+    if (req.tenantCenterId) {
+      whereConditions.push(`center_id = $${paramIndex}`);
+      params.push(req.tenantCenterId);
+      paramIndex++;
+    }
+
+    const result = await query(
+      `UPDATE users SET ${updates.join(', ')}
+       WHERE ${whereConditions.join(' AND ')}
+       RETURNING id, username, role, name, email, profile_photo, specialization, created_at, last_active`,
+      params
+    );
+
+    if (result.rows.length === 0) {
+      res.status(404).json({ error: 'Coach not found' });
+      return;
+    }
+
+    const coach = result.rows[0];
+    res.status(200).json({
+      id: coach.id,
+      username: coach.username,
+      role: coach.role,
+      name: coach.name,
+      email: coach.email,
+      profilePhoto: coach.profile_photo,
+      specialization: coach.specialization,
+      createdAt: coach.created_at,
+      lastActive: coach.last_active,
+    });
+  } catch (error) {
+    console.error('Update coach error:', error);
+    res.status(500).json({
+      error: 'An error occurred while updating the coach',
+    });
+  }
+};
+
+/**
  * GET /api/coaches
  * List all assistant coaches with their assignment counts (Head Coach only)
  */
@@ -87,9 +166,9 @@ export const listCoaches = async (
 ): Promise<void> => {
   try {
     // Build WHERE clause with tenant scoping
-    const conditions: string[] = ['u.role = $1'];
-    const params: any[] = [UserRole.ASSISTANT_COACH];
-    let paramIndex = 2;
+    const conditions: string[] = ["u.role IN ('HEAD_COACH', 'ASSISTANT_COACH')"];
+    const params: any[] = [];
+    let paramIndex = 1;
 
     if (req.tenantCenterId) {
       conditions.push(`u.center_id = $${paramIndex}`);
@@ -99,7 +178,7 @@ export const listCoaches = async (
 
     const whereClause = `WHERE ${conditions.join(' AND ')}`;
 
-    // Fetch all assistant coaches with assignment counts
+    // Fetch all coaches (HEAD_COACH and ASSISTANT_COACH) with assignment counts
     const result = await query(
       `SELECT 
         u.id,
@@ -109,6 +188,7 @@ export const listCoaches = async (
         u.email,
         u.profile_photo,
         u.specialization,
+        u.can_access_fees,
         u.created_at,
         u.last_active,
         COUNT(DISTINCT s.id) as assigned_student_count,
@@ -116,7 +196,7 @@ export const listCoaches = async (
        FROM users u
        LEFT JOIN students s ON s.assigned_coach_id = u.id
        ${whereClause}
-       GROUP BY u.id, u.username, u.role, u.name, u.email, u.profile_photo, u.specialization, u.created_at, u.last_active
+       GROUP BY u.id, u.username, u.role, u.name, u.email, u.profile_photo, u.specialization, u.can_access_fees, u.created_at, u.last_active
        ORDER BY u.name ASC`,
       params
     );
@@ -129,6 +209,7 @@ export const listCoaches = async (
       email: coach.email,
       profilePhoto: coach.profile_photo,
       specialization: coach.specialization,
+      canAccessFees: coach.can_access_fees,
       createdAt: coach.created_at,
       lastActive: coach.last_active,
       assignedStudentCount: parseInt(coach.assigned_student_count, 10),
@@ -140,6 +221,68 @@ export const listCoaches = async (
     console.error('List coaches error:', error);
     res.status(500).json({
       error: 'An error occurred while fetching coaches',
+    });
+  }
+};
+
+/**
+ * PATCH /api/coaches/:id/fee-access
+ * Toggle fee access for a coach (HEAD_COACH only)
+ * Body: { canAccessFees: boolean }
+ */
+export const toggleFeeAccess = async (
+  req: TenantRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { id: targetCoachId } = req.params;
+    const { canAccessFees } = req.body;
+
+    // Validate body is boolean
+    if (typeof canAccessFees !== 'boolean') {
+      res.status(400).json({ error: 'canAccessFees must be a boolean' });
+      return;
+    }
+
+    // Verify target user exists
+    const targetResult = await query(
+      'SELECT id, role, center_id FROM users WHERE id = $1',
+      [targetCoachId]
+    );
+
+    if (targetResult.rows.length === 0) {
+      res.status(404).json({ error: 'Coach not found' });
+      return;
+    }
+
+    const target = targetResult.rows[0];
+
+    // Verify target is in the same center
+    if (target.center_id !== req.tenantCenterId) {
+      res.status(403).json({ error: 'Cannot modify coaches outside your center' });
+      return;
+    }
+
+    // Verify target is HEAD_COACH or ASSISTANT_COACH
+    if (target.role !== UserRole.ASSISTANT_COACH && target.role !== UserRole.HEAD_COACH) {
+      res.status(400).json({ error: 'Fee access can only be toggled for coaches' });
+      return;
+    }
+
+    // Update the can_access_fees flag
+    await query(
+      'UPDATE users SET can_access_fees = $1 WHERE id = $2',
+      [canAccessFees, targetCoachId]
+    );
+
+    res.status(200).json({
+      id: targetCoachId,
+      canAccessFees,
+    });
+  } catch (error) {
+    console.error('Toggle fee access error:', error);
+    res.status(500).json({
+      error: 'An error occurred while toggling fee access',
     });
   }
 };

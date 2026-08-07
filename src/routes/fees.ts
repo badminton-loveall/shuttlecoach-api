@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authenticate, authorize } from '../middleware/auth';
 import { centerActive } from '../middleware/centerActive';
 import { tenantScope } from '../middleware/tenantScope';
+import { requireFeeAccess } from '../middleware/feeAccess';
 import {
   createFee,
   listFees,
@@ -23,6 +24,7 @@ const router = Router();
 router.use(authenticate);
 router.use(centerActive);
 router.use(tenantScope);
+router.use(requireFeeAccess);
 
 /**
  * POST /api/fees
