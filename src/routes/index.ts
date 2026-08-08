@@ -19,6 +19,9 @@ import sessionNotesRoutes from './sessionNotes';
 import analyticsRoutes from './analytics';
 import membershipRoutes from './memberships';
 import { slugChangeRequestRouter, adminSlugChangeRequestRouter } from './slugChangeRequests';
+import batchTimeTemplateRoutes from './batchTimeTemplates';
+import batchCoachAssignmentRoutes from './batchCoachAssignments';
+import studentAssignmentRoutes from './studentAssignments';
 import { getCenterInfo } from '../controllers/public/centers';
 
 const router = Router();
@@ -53,8 +56,17 @@ router.use('/coaches', coachRoutes);
 // Drill management routes
 router.use('/drills', drillRoutes);
 
+// Student assignment routes (nested under batches — registered before /batches to avoid conflicts)
+router.use('/batches/:batchId/students', studentAssignmentRoutes);
+
+// Batch coach assignment routes (nested under batches — registered before /batches to avoid conflicts)
+router.use('/batches/:batchId/coaches', batchCoachAssignmentRoutes);
+
 // Batch management routes
 router.use('/batches', batchRoutes);
+
+// Batch time template routes
+router.use('/batch-time-templates', batchTimeTemplateRoutes);
 
 // Skill scores routes
 router.use('/skill-scores', skillScoresRoutes);

@@ -8,6 +8,7 @@ import {
   recomputeMappingsOnUpdate,
 } from '../services/sessionSchedules';
 import { generateCalendarEntries } from '../services/calendarEngine';
+import { generateTemplateCalendarSessions } from '../services/templateCalendarEngine';
 
 /**
  * POST /api/session-schedules
@@ -106,8 +107,14 @@ export const getSessionScheduleHandler = async (
  * Get calendar data with mapped curriculum drills for a date range.
  * Allowed roles: ALL authenticated users (scoped - STUDENT sees only their batch)
  *
- * Query params: batchId (optional), studentId (optional), startDate (required), endDate (required)
+ * Query params: batchId (optional), studentId (optional), startDate (optional), endDate (optional)
+ * - startDate defaults to 1st of current month
+ * - endDate defaults to last day of current month
  * For STUDENT role, automatically scopes to their assigned batch.
+ *
+ * When a batch has a template_id assigned, sessions are generated on-the-fly
+ * from the template's session_slots. When no template is assigned, falls back
+ * to the legacy session schedule engine.
  */
 export const getSessionCalendarHandler = async (
   req: TenantRequest,
@@ -120,6 +127,10 @@ export const getSessionCalendarHandler = async (
     }
 
     const { batchId, studentId, startDate, endDate } = req.query;
+
+    // Resolve date range defaults (current month)
+    const resolvedStartDate = startDate as string | undefined;
+    const resolvedEndDate = endDate as string | undefined;
 
     // Determine which batch(es) to query
     let targetBatchIds: string[] = [];
@@ -186,46 +197,83 @@ export const getSessionCalendarHandler = async (
     }
 
     if (targetBatchIds.length === 0) {
-      res.status(200).json({ entries: [] });
+      res.status(200).json({ entries: [], sessions: [] });
       return;
     }
 
     // Generate calendar entries for each batch
-    const allEntries = [];
+    // Check each batch for template_id; if present, use template-based generation
+    const allEntries: any[] = [];
+    const allTemplateSessions: any[] = [];
+
     for (const bid of targetBatchIds) {
-      try {
-        const entries = await generateCalendarEntries(
-          bid,
-          startDate as string,
-          endDate as string
+      // Check if this batch has a template_id
+      let batchRow;
+      if (req.tenantCenterId) {
+        batchRow = await query(
+          'SELECT template_id FROM batches WHERE id = $1 AND center_id = $2',
+          [bid, req.tenantCenterId]
         );
-        allEntries.push(...entries);
-      } catch (err: any) {
-        // If a single batch fails (e.g., no schedule), skip it
-        if (err.message?.includes('Calendar generation limited')) {
-          res.status(400).json({ error: err.message });
-          return;
+      } else {
+        batchRow = await query(
+          'SELECT template_id FROM batches WHERE id = $1',
+          [bid]
+        );
+      }
+
+      const hasTemplate = batchRow.rows.length > 0 && batchRow.rows[0].template_id;
+
+      if (hasTemplate) {
+        // Template-based generation: compute sessions from template slots
+        const sessions = await generateTemplateCalendarSessions(
+          bid,
+          resolvedStartDate,
+          resolvedEndDate,
+          req.tenantCenterId
+        );
+        allTemplateSessions.push(...sessions);
+      } else {
+        // Legacy: use the existing calendar engine (requires startDate/endDate)
+        if (resolvedStartDate && resolvedEndDate) {
+          try {
+            const entries = await generateCalendarEntries(
+              bid,
+              resolvedStartDate,
+              resolvedEndDate
+            );
+            allEntries.push(...entries);
+          } catch (err: any) {
+            if (err.message?.includes('Calendar generation limited')) {
+              res.status(400).json({ error: err.message });
+              return;
+            }
+            if (err.message?.includes('Invalid date format')) {
+              res.status(400).json({ error: err.message });
+              return;
+            }
+            if (err.message?.includes('endDate must be on or after startDate')) {
+              res.status(400).json({ error: err.message });
+              return;
+            }
+            // Silently skip batches with no schedule or other non-critical issues
+          }
         }
-        if (err.message?.includes('Invalid date format')) {
-          res.status(400).json({ error: err.message });
-          return;
-        }
-        if (err.message?.includes('endDate must be on or after startDate')) {
-          res.status(400).json({ error: err.message });
-          return;
-        }
-        // Silently skip batches with no schedule or other non-critical issues
       }
     }
 
-    // Sort entries by date and start time
+    // Sort legacy entries by date and start time
     allEntries.sort((a, b) => {
       const dateCompare = a.date.localeCompare(b.date);
       if (dateCompare !== 0) return dateCompare;
       return a.startTime.localeCompare(b.startTime);
     });
 
-    res.status(200).json({ entries: allEntries });
+    // Template sessions are already sorted by the service
+
+    res.status(200).json({
+      entries: allEntries,
+      sessions: allTemplateSessions,
+    });
   } catch (error: any) {
     console.error('Get session calendar error:', error);
     res.status(500).json({

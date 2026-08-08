@@ -18,7 +18,7 @@ export const createBatch = async (
     const result = await query(
       `INSERT INTO batches (name, schedule, assigned_coach_id, capacity, skill_level, monthly_fee, days_of_week, start_time, end_time, description, center_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-       RETURNING id, name, schedule, assigned_coach_id, capacity, skill_level, monthly_fee, days_of_week, start_time, end_time, description, is_archived, created_at, updated_at`,
+       RETURNING id, name, schedule, assigned_coach_id, capacity, skill_level, monthly_fee, days_of_week, start_time, end_time, description, template_id, is_archived, created_at, updated_at`,
       [name, schedule || null, coachId, capacity || null, skill_level || null, monthly_fee || null, days_of_week || null, start_time || null, end_time || null, description || null, req.tenantCenterId || null]
     );
 
@@ -57,7 +57,7 @@ export const listBatches = async (
       `SELECT b.id, b.name, b.schedule, b.assigned_coach_id,
               u.name AS coach_name,
               b.capacity, b.skill_level, b.monthly_fee, b.days_of_week,
-              b.start_time, b.end_time, b.description,
+              b.start_time, b.end_time, b.description, b.template_id,
               b.created_at, b.updated_at
        FROM batches b
        LEFT JOIN users u ON b.assigned_coach_id = u.id
@@ -79,6 +79,7 @@ export const listBatches = async (
       start_time: row.start_time || null,
       end_time: row.end_time || null,
       description: row.description || null,
+      template_id: row.template_id || null,
       created_at: row.created_at,
       updated_at: row.updated_at,
     }));
@@ -102,6 +103,31 @@ export const updateBatch = async (
   try {
     const { id } = req.params;
 
+    // Validate template_id if provided and non-null
+    if (req.body.template_id !== undefined && req.body.template_id !== null) {
+      const templateResult = await query(
+        `SELECT id, center_id, is_archived FROM batch_time_templates WHERE id = $1`,
+        [req.body.template_id]
+      );
+
+      if (templateResult.rowCount === 0) {
+        res.status(404).json({ error: 'Template not found' });
+        return;
+      }
+
+      const template = templateResult.rows[0];
+
+      if (template.is_archived) {
+        res.status(400).json({ error: 'Cannot assign an archived template' });
+        return;
+      }
+
+      if (req.tenantCenterId && template.center_id !== req.tenantCenterId) {
+        res.status(400).json({ error: 'Template does not belong to this center' });
+        return;
+      }
+    }
+
     // Map of request body keys to database column names
     const allowedFields: Record<string, string> = {
       name: 'name',
@@ -115,6 +141,7 @@ export const updateBatch = async (
       start_time: 'start_time',
       end_time: 'end_time',
       description: 'description',
+      template_id: 'template_id',
     };
 
     const updates: string[] = [];
@@ -157,7 +184,7 @@ export const updateBatch = async (
       `UPDATE batches
        SET ${updates.join(', ')}
        WHERE ${whereConditions.join(' AND ')}
-       RETURNING id, name, schedule, assigned_coach_id, capacity, skill_level, monthly_fee, days_of_week, start_time, end_time, description, is_archived, created_at, updated_at`,
+       RETURNING id, name, schedule, assigned_coach_id, capacity, skill_level, monthly_fee, days_of_week, start_time, end_time, description, template_id, is_archived, created_at, updated_at`,
       params
     );
 
@@ -230,6 +257,7 @@ function mapBatchRow(row: any) {
     start_time: row.start_time || null,
     end_time: row.end_time || null,
     description: row.description || null,
+    template_id: row.template_id || null,
     is_archived: row.is_archived,
     created_at: row.created_at,
     updated_at: row.updated_at,

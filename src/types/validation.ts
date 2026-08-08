@@ -94,8 +94,8 @@ export const createSessionScheduleSchema = z.object({
 export const getSessionCalendarQuerySchema = z.object({
   batchId: uuidString.optional(),
   studentId: uuidString.optional(),
-  startDate: isoDateString,
-  endDate: isoDateString,
+  startDate: isoDateString.optional(),
+  endDate: isoDateString.optional(),
 });
 
 // --- POST /api/session-notes ---
