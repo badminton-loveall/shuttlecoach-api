@@ -2,7 +2,7 @@ import { Response } from 'express';
 import { query } from '../../config/database';
 import { UserRole } from '../../types';
 import { AuthRequest } from '../../middleware/auth';
-import { validateSlug } from '../../utils/slug';
+import { validateSlug, generateSlug } from '../../utils/slug';
 import { generateResetToken, hashToken } from '../../utils/tokenGenerator';
 import { sendCenterWelcomeEmail } from '../../services/welcomeEmailService';
 
@@ -74,9 +74,12 @@ export const createCenter = async (
       return;
     }
 
+    // Generate slug from center name
+    const slug = generateSlug(name);
+
     const result = await query(
-      `INSERT INTO centers (name, location, contact_phone, contact_email, logo_url, plan_type, subscription_expires_at, head_coach_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO centers (name, location, contact_phone, contact_email, logo_url, plan_type, subscription_expires_at, head_coach_id, slug)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING id, name, location, contact_phone, contact_email, logo_url,
                  is_active, head_coach_id, plan_type, subscription_expires_at,
                  slug, created_at, updated_at`,
@@ -89,6 +92,7 @@ export const createCenter = async (
         planType || 'basic',
         subscriptionExpiresAt || null,
         headCoachId || null,
+        slug,
       ]
     );
 
@@ -138,9 +142,7 @@ export const createCenter = async (
           // Generate URLs
           const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
           const resetLink = `${frontendUrl}/reset-password?token=${rawToken}`;
-          const loginUrl = center.slug
-            ? `${frontendUrl}/${center.slug}/login`
-            : `${frontendUrl}/login`;
+          const loginUrl = `${frontendUrl}/login`;
 
           await sendCenterWelcomeEmail({
             centerName: center.name,
