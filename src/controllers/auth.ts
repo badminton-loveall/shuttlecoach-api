@@ -17,28 +17,31 @@ export const login = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { username, password, centerSlug } = req.body;
+    const { email, username, password, centerSlug } = req.body;
+
+    // Accept email or username (email preferred)
+    const identifier = email || username;
 
     // Validate input
-    if (!username || !password) {
+    if (!identifier || !password) {
       res.status(400).json({
-        error: 'Username and password are required',
+        error: 'Email and password are required',
       });
       return;
     }
 
-    console.log('[LOGIN] Attempting login for user:', username);
+    console.log('[LOGIN] Attempting login for user:', identifier);
 
-    // Find user by username
+    // Find user by email or username
     const result = await query(
-      'SELECT id, username, password_hash, role, name, email, profile_photo, specialization, center_id, can_access_fees FROM users WHERE username = $1',
-      [username]
+      'SELECT id, username, password_hash, role, name, email, profile_photo, specialization, center_id, can_access_fees FROM users WHERE email = $1 OR username = $1',
+      [identifier]
     );
 
     console.log('[LOGIN] Query result rows:', result.rows.length);
 
     if (result.rows.length === 0) {
-      console.log('[LOGIN] User not found:', username);
+      console.log('[LOGIN] User not found:', identifier);
       res.status(401).json({
         error: 'Invalid credentials',
       });

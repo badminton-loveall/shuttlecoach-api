@@ -172,7 +172,8 @@ export interface Batch {
 
 // Request/Response Types
 export interface LoginRequest {
-  username: string;
+  email?: string;
+  username?: string; // Deprecated: use email instead
   password: string;
   centerSlug?: string;
 }

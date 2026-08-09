@@ -22,6 +22,7 @@ import { slugChangeRequestRouter, adminSlugChangeRequestRouter } from './slugCha
 import batchTimeTemplateRoutes from './batchTimeTemplates';
 import batchCoachAssignmentRoutes from './batchCoachAssignments';
 import studentAssignmentRoutes from './studentAssignments';
+import onboardingChecklistRoutes from './onboardingChecklist';
 import { getCenterInfo } from '../controllers/public/centers';
 
 const router = Router();
@@ -97,6 +98,9 @@ router.use('/slug-change-requests', slugChangeRequestRouter);
 
 // Admin slug change request routes (ADMIN approval/rejection)
 router.use('/admin/slug-change-requests', adminSlugChangeRequestRouter);
+
+// Onboarding checklist routes (HEAD_COACH only)
+router.use('/onboarding-checklist', onboardingChecklistRoutes);
 
 // Public center info route (no auth)
 router.get('/centers/:slug/info', getCenterInfo);

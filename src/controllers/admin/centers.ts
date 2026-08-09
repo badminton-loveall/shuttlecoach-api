@@ -3,6 +3,8 @@ import { query } from '../../config/database';
 import { UserRole } from '../../types';
 import { AuthRequest } from '../../middleware/auth';
 import { validateSlug } from '../../utils/slug';
+import { generateResetToken, hashToken } from '../../utils/tokenGenerator';
+import { sendCenterWelcomeEmail } from '../../services/welcomeEmailService';
 
 /**
  * GET /api/admin/centers
@@ -53,7 +55,7 @@ export const createCenter = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { name, location, contactPhone, contactEmail, logoUrl, planType, subscriptionExpiresAt } =
+    const { name, location, contactPhone, contactEmail, logoUrl, planType, subscriptionExpiresAt, headCoachId } =
       req.body;
 
     if (!name) {
@@ -73,11 +75,11 @@ export const createCenter = async (
     }
 
     const result = await query(
-      `INSERT INTO centers (name, location, contact_phone, contact_email, logo_url, plan_type, subscription_expires_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO centers (name, location, contact_phone, contact_email, logo_url, plan_type, subscription_expires_at, head_coach_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id, name, location, contact_phone, contact_email, logo_url,
                  is_active, head_coach_id, plan_type, subscription_expires_at,
-                 created_at, updated_at`,
+                 slug, created_at, updated_at`,
       [
         name,
         location || null,
@@ -86,10 +88,73 @@ export const createCenter = async (
         logoUrl || null,
         planType || 'basic',
         subscriptionExpiresAt || null,
+        headCoachId || null,
       ]
     );
 
     const center = result.rows[0];
+
+    // Insert onboarding checklist row (non-blocking — failure should not fail center creation)
+    try {
+      await query(
+        'INSERT INTO center_onboarding_checklists (center_id) VALUES ($1)',
+        [center.id]
+      );
+    } catch (checklistError) {
+      console.error(`[CreateCenter] Failed to create onboarding checklist for center ${center.id}:`, checklistError);
+    }
+
+    // If head_coach_id is assigned, fire async welcome email (non-blocking)
+    if (center.head_coach_id) {
+      setImmediate(async () => {
+        try {
+          // Look up head coach's email and username
+          const coachResult = await query(
+            'SELECT id, email, username, name FROM users WHERE id = $1',
+            [center.head_coach_id]
+          );
+
+          if (coachResult.rows.length === 0) {
+            console.warn(`[CreateCenter] Head coach ${center.head_coach_id} not found for welcome email.`);
+            return;
+          }
+
+          const coach = coachResult.rows[0];
+
+          // Generate password reset token
+          const rawToken = generateResetToken();
+          const tokenHash = hashToken(rawToken);
+          const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+          // Invalidate existing tokens for this user
+          await query('DELETE FROM password_reset_tokens WHERE user_id = $1', [coach.id]);
+
+          // Store hashed token
+          await query(
+            'INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
+            [coach.id, tokenHash, expiresAt.toISOString()]
+          );
+
+          // Generate URLs
+          const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+          const resetLink = `${frontendUrl}/reset-password?token=${rawToken}`;
+          const loginUrl = center.slug
+            ? `${frontendUrl}/${center.slug}/login`
+            : `${frontendUrl}/login`;
+
+          await sendCenterWelcomeEmail({
+            centerName: center.name,
+            headCoachEmail: coach.email,
+            userName: coach.username || coach.name,
+            resetLink,
+            loginUrl,
+            centerId: center.id,
+          });
+        } catch (emailError) {
+          console.error(`[CreateCenter] Failed to send welcome email for center ${center.id}:`, emailError);
+        }
+      });
+    }
 
     res.status(201).json({
       id: center.id,

@@ -22,7 +22,7 @@ export const assignCoach = async (
   const { coachId } = req.body;
 
   if (!coachId) {
-    res.status(400).json({ error: 'coachId is required' });
+    res.status(400).json({ error: 'coachId is required (UUID or email)' });
     return;
   }
 
@@ -37,10 +37,26 @@ export const assignCoach = async (
     return;
   }
 
+  // Resolve coachId: accept UUID or email
+  let resolvedCoachId = coachId;
+  const isEmail = coachId.includes('@');
+
+  if (isEmail) {
+    const emailLookup = await query(
+      'SELECT id FROM users WHERE email = $1',
+      [coachId]
+    );
+    if (emailLookup.rows.length === 0) {
+      res.status(404).json({ error: 'No user found with that email' });
+      return;
+    }
+    resolvedCoachId = emailLookup.rows[0].id;
+  }
+
   // Verify the coach exists and has the HEAD_COACH role
   const coachResult = await query(
     'SELECT id, role, center_id FROM users WHERE id = $1',
-    [coachId]
+    [resolvedCoachId]
   );
 
   if (coachResult.rows.length === 0) {
@@ -62,7 +78,7 @@ export const assignCoach = async (
      WHERE c.head_coach_id = $1
        AND c.is_active = true
        AND c.id <> $2`,
-    [coachId, centerId]
+    [resolvedCoachId, centerId]
   );
 
   if (conflictResult.rows.length > 0) {
@@ -92,13 +108,13 @@ export const assignCoach = async (
        RETURNING id, name, location, contact_phone, contact_email, logo_url,
                  is_active, head_coach_id, plan_type, subscription_expires_at,
                  created_at, updated_at`,
-      [coachId, centerId]
+      [resolvedCoachId, centerId]
     );
 
     // Update users.center_id for the new coach
     await client.query(
       'UPDATE users SET center_id = $1 WHERE id = $2',
-      [centerId, coachId]
+      [centerId, resolvedCoachId]
     );
 
     await client.query('COMMIT');
