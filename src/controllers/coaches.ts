@@ -1,6 +1,8 @@
 import { Response } from 'express';
 import { query } from '../config/database';
 import { hashPassword } from '../utils/auth';
+import { generateResetToken, hashToken } from '../utils/tokenGenerator';
+import { sendCoachWelcomeEmail } from '../services/welcomeEmailService';
 import { UserRole } from '../types';
 import { TenantRequest } from '../middleware/tenantScope';
 
@@ -69,6 +71,56 @@ export const createCoach = async (
       createdAt: coach.created_at,
       lastActive: coach.last_active,
     });
+
+    // Fire-and-forget welcome email if coach has an email address
+    if (email) {
+      setImmediate(async () => {
+        try {
+          // Generate password reset token
+          const rawToken = generateResetToken();
+          const tokenHash = hashToken(rawToken);
+          const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+          // Invalidate existing tokens for this user
+          await query('DELETE FROM password_reset_tokens WHERE user_id = $1', [coach.id]);
+
+          // Store hashed token
+          await query(
+            'INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
+            [coach.id, tokenHash, expiresAt.toISOString()]
+          );
+
+          // Generate URLs
+          const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+          const resetLink = `${frontendUrl}/reset-password?token=${rawToken}`;
+          const loginUrl = `${frontendUrl}/login`;
+
+          // Look up center name
+          let centerName = 'your center';
+          if (req.tenantCenterId) {
+            const centerResult = await query(
+              'SELECT name FROM centers WHERE id = $1',
+              [req.tenantCenterId]
+            );
+            if (centerResult.rows.length > 0) {
+              centerName = centerResult.rows[0].name;
+            }
+          }
+
+          sendCoachWelcomeEmail({
+            coachEmail: email,
+            coachName: name,
+            coachUsername: username,
+            centerName,
+            resetLink,
+            loginUrl,
+            centerId: req.tenantCenterId || undefined,
+          });
+        } catch (emailError) {
+          console.error(`[CreateCoach] Failed to send welcome email for coach ${coach.id}:`, emailError);
+        }
+      });
+    }
   } catch (error) {
     console.error('Create coach error:', error);
     res.status(500).json({

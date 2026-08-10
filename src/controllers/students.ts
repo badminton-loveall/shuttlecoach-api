@@ -3,6 +3,7 @@ import { query } from '../config/database';
 import { TenantRequest } from '../middleware/tenantScope';
 import { Student, UserRole } from '../types';
 import { calculateAge } from '../utils/calculations';
+import { sendStudentWelcomeEmail } from '../services/welcomeEmailService';
 
 /**
  * POST /api/students
@@ -97,6 +98,66 @@ export const createStudent = async (
 
     const student = mapDatabaseRowToStudent(result.rows[0]);
     res.status(201).json(student);
+
+    // Fire-and-forget: send student welcome email if email is provided
+    if (email && req.tenantCenterId) {
+      setImmediate(async () => {
+        try {
+          // Look up center name and contact info
+          const centerResult = await query(
+            'SELECT name, contact_email, contact_phone FROM centers WHERE id = $1',
+            [req.tenantCenterId]
+          );
+
+          if (centerResult.rows.length === 0) {
+            console.warn(`[CreateStudent] Center ${req.tenantCenterId} not found for welcome email.`);
+            return;
+          }
+
+          const center = centerResult.rows[0];
+          const centerName = center.name;
+
+          // Build center contact info string
+          const contactParts: string[] = [];
+          if (center.contact_email) {
+            contactParts.push(`Email: ${center.contact_email}`);
+          }
+          if (center.contact_phone) {
+            contactParts.push(`Phone: ${center.contact_phone}`);
+          }
+          const centerContactInfo = contactParts.length > 0
+            ? contactParts.join(' | ')
+            : 'Contact your center directly';
+
+          // Look up batch name if batchId was provided
+          let batchName: string | undefined;
+          if (batchId) {
+            const batchResult = await query(
+              'SELECT name FROM batches WHERE id = $1',
+              [batchId]
+            );
+            if (batchResult.rows.length > 0) {
+              batchName = batchResult.rows[0].name;
+            }
+          }
+
+          const isMinor = age < 18;
+
+          sendStudentWelcomeEmail({
+            studentEmail: email,
+            studentName: fullName,
+            centerName,
+            batchName,
+            centerContactInfo,
+            guardianName: guardianName || undefined,
+            isMinor,
+            centerId: req.tenantCenterId,
+          });
+        } catch (emailError) {
+          console.error(`[CreateStudent] Failed to send welcome email:`, emailError);
+        }
+      });
+    }
   } catch (error) {
     console.error('Create student error:', error);
     res.status(500).json({
