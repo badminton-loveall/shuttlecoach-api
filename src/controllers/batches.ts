@@ -56,12 +56,21 @@ export const listBatches = async (
     const result = await query(
       `SELECT b.id, b.name, b.schedule, b.assigned_coach_id,
               u.name AS coach_name,
+              u.role AS coach_role,
+              t.name AS template_name,
               b.capacity, b.skill_level, b.monthly_fee, b.days_of_week,
               b.start_time, b.end_time, b.description, b.template_id,
-              b.created_at, b.updated_at
+              b.created_at, b.updated_at,
+              COUNT(s.id) AS student_count
        FROM batches b
        LEFT JOIN users u ON b.assigned_coach_id = u.id
+       LEFT JOIN batch_time_templates t ON b.template_id = t.id
+       LEFT JOIN students s ON s.batch_id = b.id AND s.status != 'archived'
        ${whereClause}
+       GROUP BY b.id, b.name, b.schedule, b.assigned_coach_id, u.name, u.role,
+                t.name, b.capacity, b.skill_level, b.monthly_fee, b.days_of_week,
+                b.start_time, b.end_time, b.description, b.template_id,
+                b.created_at, b.updated_at
        ORDER BY b.name ASC`,
       params
     );
@@ -72,6 +81,8 @@ export const listBatches = async (
       schedule: row.schedule,
       assigned_coach_id: row.assigned_coach_id,
       coach_name: row.coach_name || null,
+      coach_role: row.coach_role || null,
+      template_name: row.template_name || null,
       capacity: row.capacity || null,
       skill_level: row.skill_level || null,
       monthly_fee: row.monthly_fee ? Number(row.monthly_fee) : null,
@@ -80,6 +91,7 @@ export const listBatches = async (
       end_time: row.end_time || null,
       description: row.description || null,
       template_id: row.template_id || null,
+      student_count: parseInt(row.student_count, 10) || 0,
       created_at: row.created_at,
       updated_at: row.updated_at,
     }));
