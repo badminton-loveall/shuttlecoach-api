@@ -3,10 +3,12 @@ import { query } from '../../config/database';
 import { AuthRequest } from '../../middleware/auth';
 import { generateResetToken, hashToken } from '../../utils/tokenGenerator';
 import { sendPasswordResetEmail } from '../../services/emailService';
+import { sendCenterWelcomeEmail } from '../../services/welcomeEmailService';
 
 /**
  * Shared helper: resolve head coach for a given center.
  * Returns the head coach user row or sends an error response and returns null.
+ * If no head_coach_id is set but contactEmail exists, looks up the user by contactEmail.
  */
 async function resolveHeadCoach(
   centerId: string,
@@ -14,7 +16,7 @@ async function resolveHeadCoach(
 ): Promise<{ id: string; name: string; email: string } | null> {
   // 1. Verify center exists
   const centerResult = await query(
-    'SELECT id, name, head_coach_id FROM centers WHERE id = $1',
+    'SELECT id, name, head_coach_id, contact_email FROM centers WHERE id = $1',
     [centerId]
   );
 
@@ -25,26 +27,70 @@ async function resolveHeadCoach(
 
   const center = centerResult.rows[0];
 
-  // 2. Check if head coach is assigned
-  if (!center.head_coach_id) {
+  // 2. Try head_coach_id first, then fall back to contact_email lookup
+  let coach: { id: string; name: string; email: string } | null = null;
+
+  if (center.head_coach_id) {
+    const coachResult = await query(
+      'SELECT id, name, email FROM users WHERE id = $1',
+      [center.head_coach_id]
+    );
+    if (coachResult.rows.length > 0) {
+      coach = coachResult.rows[0];
+    }
+  }
+
+  // Fallback: look up user by center's contact_email
+  if (!coach && center.contact_email) {
+    const ownerEmail = center.contact_email.trim().toLowerCase();
+    const coachResult = await query(
+      'SELECT id, name, email FROM users WHERE LOWER(email) = $1 OR LOWER(username) = $1',
+      [ownerEmail]
+    );
+    if (coachResult.rows.length > 0) {
+      coach = coachResult.rows[0];
+      // Ensure center has head_coach_id set
+      if (!center.head_coach_id) {
+        await query('UPDATE centers SET head_coach_id = $1 WHERE id = $2', [coach!.id, centerId]);
+      }
+      // Ensure membership exists
+      await query(
+        `INSERT INTO user_center_memberships (user_id, center_id, role)
+         VALUES ($1, $2, 'HEAD_COACH')
+         ON CONFLICT (user_id, center_id, role) DO NOTHING`,
+        [coach!.id, centerId]
+      );
+    } else {
+      // Auto-create the user from contactEmail
+      try {
+        const newUser = await query(
+          `INSERT INTO users (username, email, role, name, center_id, created_at, last_active)
+           VALUES ($1, $2, 'HEAD_COACH', $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+           RETURNING id, name, email`,
+          [ownerEmail, ownerEmail, center.name || ownerEmail, centerId]
+        );
+        if (newUser.rows.length > 0) {
+          coach = newUser.rows[0];
+          await query('UPDATE centers SET head_coach_id = $1 WHERE id = $2', [coach!.id, centerId]);
+          // Create membership
+          await query(
+            `INSERT INTO user_center_memberships (user_id, center_id, role)
+             VALUES ($1, $2, 'HEAD_COACH')
+             ON CONFLICT (user_id, center_id, role) DO NOTHING`,
+            [coach!.id, centerId]
+          );
+        }
+      } catch (insertErr) {
+        console.error('[resolveHeadCoach] Failed to auto-create user:', insertErr);
+      }
+    }
+  }
+
+  if (!coach) {
     res.status(422).json({ error: 'No head coach is assigned to this center' });
     return null;
   }
 
-  // 3. Look up the head coach user to get their email
-  const coachResult = await query(
-    'SELECT id, name, email FROM users WHERE id = $1',
-    [center.head_coach_id]
-  );
-
-  if (coachResult.rows.length === 0) {
-    res.status(422).json({ error: 'Head coach user not found' });
-    return null;
-  }
-
-  const coach = coachResult.rows[0];
-
-  // 4. Validate email exists
   if (!coach.email) {
     res.status(422).json({ error: 'Head coach has no email address on file' });
     return null;
@@ -75,49 +121,37 @@ export const inviteCoach = async (
 
     if (!coach) return; // Response already sent by helper
 
-    // Build invite link
+    // Look up center name
+    const centerResult = await query('SELECT name FROM centers WHERE id = $1', [centerId]);
+    const centerName = centerResult.rows[0]?.name || 'your center';
+
+    // Generate password reset token so they can set their password
+    const rawToken = generateResetToken();
+    const tokenHash = hashToken(rawToken);
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+    // Invalidate existing tokens
+    await query('DELETE FROM password_reset_tokens WHERE user_id = $1', [coach.id]);
+
+    // Store hashed token
+    await query(
+      'INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
+      [coach.id, tokenHash, expiresAt.toISOString()]
+    );
+
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-    const inviteLink = `${frontendUrl}/login`;
+    const resetLink = `${frontendUrl}/reset-password?token=${rawToken}`;
+    const loginUrl = `${frontendUrl}/login`;
 
-    // Send invite email (reuse email service pattern; swallows errors internally)
-    try {
-      const { default: nodemailer } = await import('nodemailer');
-      const transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST,
-        port: parseInt(process.env.SMTP_PORT || '587', 10),
-        secure: parseInt(process.env.SMTP_PORT || '587', 10) === 465,
-        auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS,
-        },
-      });
-
-      await transporter.sendMail({
-        from: process.env.SMTP_FROM || 'noreply@shuttlecoach.app',
-        to: coach.email,
-        subject: 'You\'re Invited to ShuttleCoach',
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2>Welcome to ShuttleCoach!</h2>
-            <p>Hi ${coach.name},</p>
-            <p>You have been invited as the Head Coach on ShuttleCoach. Click below to get started:</p>
-            <p style="margin: 24px 0;">
-              <a href="${inviteLink}"
-                 style="background-color: #4F46E5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
-                Log In to ShuttleCoach
-              </a>
-            </p>
-            <p>Or copy and paste this link into your browser:</p>
-            <p style="word-break: break-all; color: #6B7280;">${inviteLink}</p>
-            <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 24px 0;" />
-            <p style="color: #9CA3AF; font-size: 12px;">ShuttleCoach — Badminton Coaching Management</p>
-          </div>
-        `,
-      });
-    } catch (emailError) {
-      console.error('[ADMIN] Failed to send invite email:', emailError);
-      // Continue — email failure is non-blocking
-    }
+    // Send branded welcome email
+    await sendCenterWelcomeEmail({
+      centerName,
+      headCoachEmail: coach.email,
+      userName: coach.name || coach.email,
+      resetLink,
+      loginUrl,
+      centerId,
+    });
 
     res.status(200).json({
       success: true,

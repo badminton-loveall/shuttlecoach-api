@@ -13,7 +13,7 @@ export async function getMembershipsByUserId(
   userId: string
 ): Promise<CenterMembership[]> {
   const result = await query(
-    `SELECT
+    `SELECT DISTINCT ON (ucm.center_id)
        ucm.center_id,
        c.name AS center_name,
        ucm.role,
@@ -21,7 +21,13 @@ export async function getMembershipsByUserId(
      FROM user_center_memberships ucm
      JOIN centers c ON ucm.center_id = c.id
      WHERE ucm.user_id = $1
-     ORDER BY ucm.created_at ASC`,
+     ORDER BY ucm.center_id, 
+       CASE ucm.role 
+         WHEN 'HEAD_COACH' THEN 1 
+         WHEN 'ASSISTANT_COACH' THEN 2 
+         ELSE 3 
+       END,
+       ucm.created_at ASC`,
     [userId]
   );
 

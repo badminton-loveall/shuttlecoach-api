@@ -7,6 +7,13 @@ import { UserRole } from '../types';
 import { TenantRequest } from '../middleware/tenantScope';
 
 /**
+ * Validates whether a string is a valid UUID v4 format.
+ */
+function isValidUUID(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
+/**
  * POST /api/coaches
  * Create a new assistant coach account (Head Coach only)
  */
@@ -15,7 +22,7 @@ export const createCoach = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { name, username, password, specialization, profilePhoto, email } = req.body;
+    const { name, username, password, specialization, profilePhoto, email, seniorCoachId } = req.body;
 
     // Validate required fields
     if (!name || !username || !password) {
@@ -38,23 +45,49 @@ export const createCoach = async (
       return;
     }
 
+    // Validate seniorCoachId if provided
+    if (seniorCoachId !== undefined && seniorCoachId !== null) {
+      if (!isValidUUID(seniorCoachId)) {
+        res.status(400).json({
+          error: 'Senior coach ID format is invalid',
+        });
+        return;
+      }
+
+      const seniorCoachResult = await query(
+        `SELECT id FROM users WHERE id = $1 AND role IN ('HEAD_COACH', 'ASSISTANT_COACH') AND center_id = $2`,
+        [seniorCoachId, req.tenantCenterId]
+      );
+
+      if (seniorCoachResult.rows.length === 0) {
+        res.status(400).json({
+          error: 'Invalid senior coach reference. The selected coach does not exist or is not available at this center.',
+        });
+        return;
+      }
+    }
+
+    // Determine role based on seniorCoachId presence
+    const assignedRole = seniorCoachId ? UserRole.ASSISTANT_COACH : UserRole.HEAD_COACH;
+
     // Hash password
     const passwordHash = await hashPassword(password);
 
-    // Insert new assistant coach with center_id
+    // Insert new coach with center_id and senior_coach_id
     const result = await query(
-      `INSERT INTO users (username, password_hash, role, name, email, profile_photo, specialization, center_id, created_at, last_active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-       RETURNING id, username, role, name, email, profile_photo, specialization, created_at, last_active`,
+      `INSERT INTO users (username, password_hash, role, name, email, profile_photo, specialization, center_id, senior_coach_id, created_at, last_active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+       RETURNING id, username, role, name, email, profile_photo, specialization, senior_coach_id, created_at, last_active`,
       [
         username,
         passwordHash,
-        UserRole.ASSISTANT_COACH,
+        assignedRole,
         name,
         email || null,
         profilePhoto || null,
         specialization || null,
         req.tenantCenterId || null,
+        seniorCoachId || null,
       ]
     );
 
@@ -68,6 +101,7 @@ export const createCoach = async (
       email: coach.email,
       profilePhoto: coach.profile_photo,
       specialization: coach.specialization,
+      seniorCoachId: coach.senior_coach_id || null,
       createdAt: coach.created_at,
       lastActive: coach.last_active,
     });

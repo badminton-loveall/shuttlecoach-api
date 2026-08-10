@@ -108,11 +108,84 @@ export const createCenter = async (
       console.error(`[CreateCenter] Failed to create onboarding checklist for center ${center.id}:`, checklistError);
     }
 
-    // If head_coach_id is assigned, fire async welcome email (non-blocking)
-    if (center.head_coach_id) {
+    // Auto-create center owner account from contactEmail and send welcome email
+    // If contactEmail is provided and no headCoachId was explicitly assigned,
+    // create (or find) a HEAD_COACH user for this email and assign them.
+    if (contactEmail && !headCoachId) {
       setImmediate(async () => {
         try {
-          // Look up head coach's email and username
+          const ownerEmail = contactEmail.trim().toLowerCase();
+
+          // Check if user already exists with this email/username
+          let ownerId: string;
+          let ownerUsername: string;
+          const existingOwner = await query(
+            'SELECT id, username FROM users WHERE LOWER(email) = $1 OR LOWER(username) = $1',
+            [ownerEmail]
+          );
+
+          if (existingOwner.rows.length > 0) {
+            // Existing user — just assign them as head coach
+            ownerId = existingOwner.rows[0].id;
+            ownerUsername = existingOwner.rows[0].username;
+          } else {
+            // Create new user with email as username, no password (they'll set it via reset link)
+            const newUser = await query(
+              `INSERT INTO users (username, email, role, name, center_id, created_at, last_active)
+               VALUES ($1, $2, 'HEAD_COACH', $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+               RETURNING id, username`,
+              [ownerEmail, ownerEmail, name, center.id]
+            );
+            ownerId = newUser.rows[0].id;
+            ownerUsername = newUser.rows[0].username;
+          }
+
+          // Assign as head coach of this center
+          await query('UPDATE centers SET head_coach_id = $1 WHERE id = $2', [ownerId, center.id]);
+
+          // Create membership for multi-center access
+          await query(
+            `INSERT INTO user_center_memberships (user_id, center_id, role)
+             VALUES ($1, $2, 'HEAD_COACH')
+             ON CONFLICT (user_id, center_id, role) DO NOTHING`,
+            [ownerId, center.id]
+          );
+
+          // Generate password reset token
+          const rawToken = generateResetToken();
+          const tokenHash = hashToken(rawToken);
+          const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+          // Invalidate existing tokens for this user
+          await query('DELETE FROM password_reset_tokens WHERE user_id = $1', [ownerId]);
+
+          // Store hashed token
+          await query(
+            'INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
+            [ownerId, tokenHash, expiresAt.toISOString()]
+          );
+
+          // Generate URLs
+          const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+          const resetLink = `${frontendUrl}/reset-password?token=${rawToken}`;
+          const loginUrl = `${frontendUrl}/login`;
+
+          await sendCenterWelcomeEmail({
+            centerName: center.name,
+            headCoachEmail: ownerEmail,
+            userName: ownerUsername,
+            resetLink,
+            loginUrl,
+            centerId: center.id,
+          });
+        } catch (emailError) {
+          console.error(`[CreateCenter] Failed to create owner account / send welcome email for center ${center.id}:`, emailError);
+        }
+      });
+    } else if (center.head_coach_id) {
+      // Legacy path: headCoachId was explicitly provided — send welcome email to that user
+      setImmediate(async () => {
+        try {
           const coachResult = await query(
             'SELECT id, email, username, name FROM users WHERE id = $1',
             [center.head_coach_id]
@@ -130,16 +203,12 @@ export const createCenter = async (
           const tokenHash = hashToken(rawToken);
           const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
 
-          // Invalidate existing tokens for this user
           await query('DELETE FROM password_reset_tokens WHERE user_id = $1', [coach.id]);
-
-          // Store hashed token
           await query(
             'INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
             [coach.id, tokenHash, expiresAt.toISOString()]
           );
 
-          // Generate URLs
           const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
           const resetLink = `${frontendUrl}/reset-password?token=${rawToken}`;
           const loginUrl = `${frontendUrl}/login`;
