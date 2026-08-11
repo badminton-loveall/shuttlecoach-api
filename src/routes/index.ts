@@ -6,6 +6,7 @@ import studentRoutes from './students';
 import assessmentRoutes from './assessments';
 import feeRoutes from './fees';
 import curriculumRoutes from './curriculum';
+import courseRoutes from './courses';
 import trainingLogRoutes from './trainingLogs';
 import coachRoutes from './coaches';
 import drillRoutes from './drills';
@@ -49,6 +50,9 @@ router.use('/fees', feeRoutes);
 
 // Curriculum routes
 router.use('/curriculum', curriculumRoutes);
+
+// Course management routes (reusable course templates)
+router.use('/courses', courseRoutes);
 
 // Training log routes
 router.use('/training-logs', trainingLogRoutes);

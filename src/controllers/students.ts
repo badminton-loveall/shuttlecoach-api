@@ -4,6 +4,7 @@ import { TenantRequest } from '../middleware/tenantScope';
 import { Student, UserRole } from '../types';
 import { calculateAge } from '../utils/calculations';
 import { sendStudentWelcomeEmail } from '../services/welcomeEmailService';
+import { autoCloneStudentPlan } from '../services/curriculumCloneService';
 
 /**
  * POST /api/students
@@ -98,6 +99,17 @@ export const createStudent = async (
 
     const student = mapDatabaseRowToStudent(result.rows[0]);
     res.status(201).json(student);
+
+    // Fire-and-forget: auto-clone curriculum plan if student is added to a batch with a course
+    if (batchId && student.id) {
+      setImmediate(async () => {
+        try {
+          await autoCloneStudentPlan(student.id, batchId, req.tenantCenterId || null);
+        } catch (err) {
+          console.error('[CreateStudent] Auto-clone curriculum plan failed:', err);
+        }
+      });
+    }
 
     // Fire-and-forget: send student welcome email if email is provided
     if (email && req.tenantCenterId) {
@@ -365,7 +377,7 @@ export const updateStudent = async (
     }
 
     const existingResult = await query(
-      `SELECT id, assigned_coach_id FROM students WHERE ${existingConditions.join(' AND ')}`,
+      `SELECT id, assigned_coach_id, batch_id FROM students WHERE ${existingConditions.join(' AND ')}`,
       existingParams
     );
 
@@ -471,6 +483,20 @@ export const updateStudent = async (
 
     const student = mapDatabaseRowToStudent(result.rows[0]);
     res.status(200).json(student);
+
+    // Fire-and-forget: auto-clone curriculum plan if student was moved to a new batch
+    const newBatchId = req.body.batchId as string | undefined;
+    const oldBatchId = existingStudent.batch_id;
+    if (newBatchId && newBatchId !== oldBatchId) {
+      const studentId = id as string;
+      setImmediate(async () => {
+        try {
+          await autoCloneStudentPlan(studentId, newBatchId, req.tenantCenterId || null);
+        } catch (err) {
+          console.error('[UpdateStudent] Auto-clone curriculum plan failed:', err);
+        }
+      });
+    }
   } catch (error) {
     console.error('Update student error:', error);
     res.status(500).json({

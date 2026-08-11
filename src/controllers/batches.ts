@@ -12,14 +12,14 @@ export const createBatch = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { name, schedule, assignedCoachId, assigned_coach_id, capacity, skill_level, monthly_fee, days_of_week, start_time, end_time, description } = req.body;
+    const { name, schedule, assignedCoachId, assigned_coach_id, capacity, skill_level, monthly_fee, days_of_week, start_time, end_time, description, curriculum_id } = req.body;
     const coachId = assignedCoachId || assigned_coach_id || null;
 
     const result = await query(
-      `INSERT INTO batches (name, schedule, assigned_coach_id, capacity, skill_level, monthly_fee, days_of_week, start_time, end_time, description, center_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-       RETURNING id, name, schedule, assigned_coach_id, capacity, skill_level, monthly_fee, days_of_week, start_time, end_time, description, template_id, is_archived, created_at, updated_at`,
-      [name, schedule || null, coachId, capacity || null, skill_level || null, monthly_fee || null, days_of_week || null, start_time || null, end_time || null, description || null, req.tenantCenterId || null]
+      `INSERT INTO batches (name, schedule, assigned_coach_id, capacity, skill_level, monthly_fee, days_of_week, start_time, end_time, description, center_id, curriculum_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       RETURNING id, name, schedule, assigned_coach_id, capacity, skill_level, monthly_fee, days_of_week, start_time, end_time, description, template_id, curriculum_id, is_archived, created_at, updated_at`,
+      [name, schedule || null, coachId, capacity || null, skill_level || null, monthly_fee || null, days_of_week || null, start_time || null, end_time || null, description || null, req.tenantCenterId || null, curriculum_id || null]
     );
 
     const batch = mapBatchRow(result.rows[0]);
@@ -58,6 +58,8 @@ export const listBatches = async (
               u.name AS coach_name,
               u.role AS coach_role,
               t.name AS template_name,
+              c.name AS curriculum_name,
+              b.curriculum_id,
               b.capacity, b.skill_level, b.monthly_fee, b.days_of_week,
               b.start_time, b.end_time, b.description, b.template_id,
               b.created_at, b.updated_at,
@@ -65,10 +67,12 @@ export const listBatches = async (
        FROM batches b
        LEFT JOIN users u ON b.assigned_coach_id = u.id
        LEFT JOIN batch_time_templates t ON b.template_id = t.id
+       LEFT JOIN courses c ON b.curriculum_id = c.id
        LEFT JOIN students s ON s.batch_id = b.id AND s.status != 'archived'
        ${whereClause}
        GROUP BY b.id, b.name, b.schedule, b.assigned_coach_id, u.name, u.role,
-                t.name, b.capacity, b.skill_level, b.monthly_fee, b.days_of_week,
+                t.name, c.name, b.curriculum_id,
+                b.capacity, b.skill_level, b.monthly_fee, b.days_of_week,
                 b.start_time, b.end_time, b.description, b.template_id,
                 b.created_at, b.updated_at
        ORDER BY b.name ASC`,
@@ -83,6 +87,8 @@ export const listBatches = async (
       coach_name: row.coach_name || null,
       coach_role: row.coach_role || null,
       template_name: row.template_name || null,
+      curriculum_id: row.curriculum_id || null,
+      curriculum_name: row.curriculum_name || null,
       capacity: row.capacity || null,
       skill_level: row.skill_level || null,
       monthly_fee: row.monthly_fee ? Number(row.monthly_fee) : null,
@@ -154,6 +160,7 @@ export const updateBatch = async (
       end_time: 'end_time',
       description: 'description',
       template_id: 'template_id',
+      curriculum_id: 'curriculum_id',
     };
 
     const updates: string[] = [];
