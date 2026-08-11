@@ -5,6 +5,7 @@ import { query } from '../config/database';
  *
  * Generates session entries on-the-fly from a batch's assigned template slots.
  * No materialized session rows — computed dynamically from template + date range.
+ * Also joins curriculum drill data from assigned curriculum plans.
  */
 
 export interface TemplateCalendarSession {
@@ -12,6 +13,11 @@ export interface TemplateCalendarSession {
   day_of_week: string; // Mon, Tue, Wed, Thu, Fri, Sat, Sun
   start_time: string;  // HH:MM
   duration_hours: number;
+  batchId: string;
+  batchName: string;
+  weekNumber?: number;
+  focusArea?: string;
+  drills?: string[];
 }
 
 /**
@@ -43,16 +49,16 @@ export async function generateTemplateCalendarSessions(
   endDate?: string,
   centerId?: string
 ): Promise<TemplateCalendarSession[]> {
-  // 1. Look up the batch's template_id
+  // 1. Look up the batch's template_id and name
   let batchResult;
   if (centerId) {
     batchResult = await query(
-      `SELECT template_id FROM batches WHERE id = $1 AND center_id = $2`,
+      `SELECT template_id, name FROM batches WHERE id = $1 AND center_id = $2`,
       [batchId, centerId]
     );
   } else {
     batchResult = await query(
-      `SELECT template_id FROM batches WHERE id = $1`,
+      `SELECT template_id, name FROM batches WHERE id = $1`,
       [batchId]
     );
   }
@@ -62,6 +68,7 @@ export async function generateTemplateCalendarSessions(
   }
 
   const templateId = batchResult.rows[0].template_id;
+  const batchName = batchResult.rows[0].name || 'Unknown Batch';
 
   // 2. If no template assigned, return empty
   if (!templateId) {
@@ -83,7 +90,13 @@ export async function generateTemplateCalendarSessions(
   // 4. Determine date range (default: current month)
   const { start, end } = resolveDateRange(startDate, endDate);
 
-  // 5. For each slot, find all dates in [start, end] matching the slot's day_of_week
+  // 5. Fetch curriculum plan weeks for this batch (latest non-archived batch-level plan)
+  const curriculumWeeks = await getCurriculumWeeksForBatch(batchId);
+
+  // 6. Fetch session schedule for cycle start date (to compute week numbers)
+  const cycleStartDate = await getCycleStartDate(batchId);
+
+  // 7. For each slot, find all dates in [start, end] matching the slot's day_of_week
   const sessions: TemplateCalendarSession[] = [];
 
   for (const slot of slotsResult.rows) {
@@ -101,16 +114,38 @@ export async function generateTemplateCalendarSessions(
     const matchingDates = findDatesForDayOfWeek(start, end, targetDayNum);
 
     for (const date of matchingDates) {
+      // Compute week number from cycle start date
+      const weekNumber = computeWeekNumber(date, cycleStartDate);
+
+      // Get drills and focus area from curriculum plan for this week
+      let focusArea: string | undefined;
+      let drills: string[] | undefined;
+
+      if (weekNumber && curriculumWeeks) {
+        const weekPlan = curriculumWeeks.find(
+          (w) => w.weekNumber === weekNumber
+        );
+        if (weekPlan) {
+          focusArea = weekPlan.focusArea;
+          drills = weekPlan.drills.map((d) => d.name);
+        }
+      }
+
       sessions.push({
         date: formatDate(date),
         day_of_week: dayName,
         start_time: startTimeFormatted,
         duration_hours: slot.duration_hours,
+        batchId,
+        batchName,
+        weekNumber: weekNumber || undefined,
+        focusArea,
+        drills,
       });
     }
   }
 
-  // 6. Sort by date, then start_time
+  // 8. Sort by date, then start_time
   sessions.sort((a, b) => {
     const dateCompare = a.date.localeCompare(b.date);
     if (dateCompare !== 0) return dateCompare;
@@ -146,6 +181,86 @@ function resolveDateRange(
   }
 
   return { start, end };
+}
+
+/**
+ * Fetch the curriculum plan weeks for a batch.
+ * Returns the most recent non-archived batch-level plan (student_id IS NULL).
+ */
+async function getCurriculumWeeksForBatch(
+  batchId: string
+): Promise<Array<{ weekNumber: number; focusArea: string; drills: Array<{ name: string; category: string }> }> | null> {
+  const result = await query(
+    `SELECT weeks FROM curriculum_plans
+     WHERE batch_id = $1 AND is_archived = false AND student_id IS NULL
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [batchId]
+  );
+
+  if (result.rows.length === 0) {
+    return null;
+  }
+
+  const weeks = typeof result.rows[0].weeks === 'string'
+    ? JSON.parse(result.rows[0].weeks)
+    : result.rows[0].weeks;
+
+  return weeks.map((w: any) => ({
+    weekNumber: w.weekNumber,
+    focusArea: w.focusArea || '',
+    drills: (w.drills || []).map((d: any) => ({
+      name: d.name,
+      category: d.category,
+    })),
+  }));
+}
+
+/**
+ * Get the cycle start date for a batch from the session_schedules table.
+ * Returns null if no schedule exists or no cycle_start_date is set.
+ */
+async function getCycleStartDate(batchId: string): Promise<Date | null> {
+  const result = await query(
+    `SELECT cycle_start_date FROM session_schedules WHERE batch_id = $1`,
+    [batchId]
+  );
+
+  if (result.rows.length === 0 || !result.rows[0].cycle_start_date) {
+    return null;
+  }
+
+  return parseDate(
+    typeof result.rows[0].cycle_start_date === 'string'
+      ? result.rows[0].cycle_start_date
+      : formatDate(new Date(result.rows[0].cycle_start_date))
+  );
+}
+
+/**
+ * Compute the curriculum week number for a given date based on the cycle start date.
+ * Returns null if no cycle start date is available or date is before cycle start.
+ * Curriculum plans max out at 8 weeks.
+ */
+function computeWeekNumber(date: Date, cycleStartDate: Date | null): number | null {
+  if (!cycleStartDate) {
+    return null;
+  }
+
+  const diffMs = date.getTime() - cycleStartDate.getTime();
+  if (diffMs < 0) {
+    return null; // Date is before cycle start
+  }
+
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const weekNumber = Math.floor(diffDays / 7) + 1;
+
+  // Curriculum plans max out at 8 weeks
+  if (weekNumber < 1 || weekNumber > 8) {
+    return null;
+  }
+
+  return weekNumber;
 }
 
 /**

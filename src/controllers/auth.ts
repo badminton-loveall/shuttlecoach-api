@@ -112,8 +112,8 @@ export const login = async (
       return;
     }
 
-    let activeCenterId: string;
-    let activeRole: UserRole;
+    let activeCenterId: string = '';
+    let activeRole: UserRole = UserRole.HEAD_COACH;
 
     if (centerSlug) {
       // Branded login: find membership matching the provided slug
@@ -138,9 +138,25 @@ export const login = async (
       activeCenterId = matchingMembership.centerId;
       activeRole = matchingMembership.role;
     } else {
-      // No slug: default to earliest membership (first in list, already ordered by created_at ASC)
-      activeCenterId = memberships[0].centerId;
-      activeRole = memberships[0].role;
+      // No slug: default to first ACTIVE membership
+      // Find the first membership whose center is active
+      let defaultFound = false;
+      for (const m of memberships) {
+        const centerCheck = await query(
+          'SELECT is_active FROM centers WHERE id = $1',
+          [m.centerId]
+        );
+        if (centerCheck.rows.length > 0 && centerCheck.rows[0].is_active) {
+          activeCenterId = m.centerId;
+          activeRole = m.role;
+          defaultFound = true;
+          break;
+        }
+      }
+      if (!defaultFound) {
+        res.status(403).json({ error: 'All your centers are currently inactive' });
+        return;
+      }
     }
 
     // Verify active center is active and not expired

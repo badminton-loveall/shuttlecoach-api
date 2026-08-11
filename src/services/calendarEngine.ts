@@ -93,7 +93,7 @@ export async function generateCalendarEntries(
 
     // Get drills and focus area from curriculum plan
     let focusArea: string | undefined;
-    let drills: Array<{ name: string; category: string }> | undefined;
+    let drills: string[] | undefined;
 
     if (weekInfo && curriculumWeeks) {
       const weekPlan = curriculumWeeks.find(
@@ -101,10 +101,7 @@ export async function generateCalendarEntries(
       );
       if (weekPlan) {
         focusArea = weekPlan.focusArea;
-        drills = weekPlan.drills.map((d) => ({
-          name: d.name,
-          category: d.category,
-        }));
+        drills = weekPlan.drills.map((d) => d.name);
       }
     }
 

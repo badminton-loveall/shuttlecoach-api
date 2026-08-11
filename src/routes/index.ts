@@ -24,6 +24,7 @@ import batchCoachAssignmentRoutes from './batchCoachAssignments';
 import studentAssignmentRoutes from './studentAssignments';
 import onboardingChecklistRoutes from './onboardingChecklist';
 import ledgerRoutes from './ledger';
+import salaryRoutes from './salary';
 import { getCenterInfo } from '../controllers/public/centers';
 
 const router = Router();
@@ -105,6 +106,9 @@ router.use('/onboarding-checklist', onboardingChecklistRoutes);
 
 // Ledger routes (financial ledger for fee/salary tracking)
 router.use('/ledger', ledgerRoutes);
+
+// Salary routes (salary generation, listing, pay/revert)
+router.use('/salary', salaryRoutes);
 
 // Public center info route (no auth)
 router.get('/centers/:slug/info', getCenterInfo);

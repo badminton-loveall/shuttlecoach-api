@@ -5,6 +5,140 @@ import { LedgerReferenceType } from '../types';
 import { createDebitEntry, createReversalEntry, SalaryRecordForLedger } from '../services/ledgerService';
 
 /**
+ * POST /api/salary/generate
+ * Generate PENDING salary records for all eligible coaches in the center.
+ * Requires: HEAD_COACH role
+ */
+export const generateSalary = async (
+  req: TenantRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { period } = req.body;
+
+    if (!period) {
+      res.status(400).json({ error: 'Missing required field: period' });
+      return;
+    }
+
+    const centerId = req.tenantCenterId;
+
+    // Query all coaches in the center with non-null monthly_salary
+    const coachesResult = await query(
+      `SELECT id, monthly_salary FROM users WHERE center_id = $1 AND role IN ('HEAD_COACH', 'ASSISTANT_COACH') AND monthly_salary IS NOT NULL`,
+      [centerId]
+    );
+
+    let created = 0;
+    let skipped = 0;
+
+    for (const coach of coachesResult.rows) {
+      // Check if salary record already exists for this coach and period
+      const existingResult = await query(
+        `SELECT id FROM salary_records WHERE coach_user_id = $1 AND salary_period = $2`,
+        [coach.id, period]
+      );
+
+      if (existingResult.rows.length > 0) {
+        skipped++;
+        continue;
+      }
+
+      // Insert PENDING salary record
+      await query(
+        `INSERT INTO salary_records (coach_user_id, amount, salary_period, status, center_id) VALUES ($1, $2, $3, 'PENDING', $4)`,
+        [coach.id, coach.monthly_salary, period, centerId]
+      );
+      created++;
+    }
+
+    res.status(200).json({ created, skipped, period });
+  } catch (error) {
+    console.error('Generate salary error:', error);
+    res.status(500).json({
+      error: 'An error occurred while generating salary records',
+    });
+  }
+};
+
+/**
+ * GET /api/salary
+ * List salary records for a given period, scoped to center.
+ * Defaults to current month if no period query param provided.
+ * Requires: HEAD_COACH role
+ */
+export const listSalary = async (
+  req: TenantRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const period = (req.query.period as string) || new Date().toISOString().slice(0, 7);
+    const centerId = req.tenantCenterId;
+
+    const result = await query(
+      `SELECT sr.*, u.name as coach_name FROM salary_records sr JOIN users u ON sr.coach_user_id = u.id WHERE sr.salary_period = $1 AND sr.center_id = $2 ORDER BY u.name ASC`,
+      [period, centerId]
+    );
+
+    res.status(200).json(result.rows);
+  } catch (error) {
+    console.error('List salary error:', error);
+    res.status(500).json({
+      error: 'An error occurred while listing salary records',
+    });
+  }
+};
+
+/**
+ * GET /api/salary/coach/:coachId
+ * Get salary history for a specific coach, scoped to center.
+ * Supports optional period query param for filtering.
+ * Requires: HEAD_COACH role
+ */
+export const getCoachSalary = async (
+  req: TenantRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { coachId } = req.params;
+    const period = req.query.period as string | undefined;
+    const centerId = req.tenantCenterId;
+
+    // Verify coach belongs to the requesting user's center
+    const coachResult = await query(
+      `SELECT id FROM users WHERE id = $1 AND center_id = $2`,
+      [coachId, centerId]
+    );
+
+    if (coachResult.rows.length === 0) {
+      res.status(404).json({ error: 'Coach not found' });
+      return;
+    }
+
+    // Build query for salary records
+    const conditions: string[] = ['coach_user_id = $1', 'center_id = $2'];
+    const params: any[] = [coachId, centerId];
+
+    if (period) {
+      conditions.push(`salary_period = $3`);
+      params.push(period);
+    }
+
+    const result = await query(
+      `SELECT * FROM salary_records WHERE ${conditions.join(' AND ')} ORDER BY salary_period DESC`,
+      params
+    );
+
+    res.status(200).json(result.rows);
+  } catch (error) {
+    console.error('Get coach salary error:', error);
+    res.status(500).json({
+      error: 'An error occurred while retrieving coach salary records',
+    });
+  }
+};
+
+/**
  * PATCH /api/salary/:id/pay
  * Mark a salary record as paid and create a corresponding DEBIT ledger entry.
  * Requires: HEAD_COACH role

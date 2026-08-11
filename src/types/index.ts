@@ -391,7 +391,7 @@ export interface CalendarEntry {
   endTime: string;   // "HH:MM"
   weekNumber?: number;
   focusArea?: string;
-  drills?: Array<{ name: string; category: string }>;
+  drills?: string[];
   attendanceRecorded?: boolean;
   coachNote?: string;
 }

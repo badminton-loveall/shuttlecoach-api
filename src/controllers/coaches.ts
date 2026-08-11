@@ -22,7 +22,10 @@ export const createCoach = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { name, username, password, specialization, profilePhoto, email, seniorCoachId } = req.body;
+    const {
+      name, username, password, specialization, profilePhoto, email, seniorCoachId,
+      phone, dateOfBirth, address, qualification, experienceYears, bankDetails, monthlySalary,
+    } = req.body;
 
     // Validate required fields
     if (!name || !username || !password) {
@@ -73,11 +76,11 @@ export const createCoach = async (
     // Hash password
     const passwordHash = await hashPassword(password);
 
-    // Insert new coach with center_id and senior_coach_id
+    // Insert new coach with center_id, senior_coach_id, and extended profile fields
     const result = await query(
-      `INSERT INTO users (username, password_hash, role, name, email, profile_photo, specialization, center_id, senior_coach_id, created_at, last_active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-       RETURNING id, username, role, name, email, profile_photo, specialization, senior_coach_id, created_at, last_active`,
+      `INSERT INTO users (username, password_hash, role, name, email, profile_photo, specialization, center_id, senior_coach_id, phone, date_of_birth, address, qualification, experience_years, bank_details, monthly_salary, created_at, last_active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+       RETURNING id, username, role, name, email, profile_photo, specialization, senior_coach_id, phone, date_of_birth, address, qualification, experience_years, bank_details, monthly_salary, created_at, last_active`,
       [
         username,
         passwordHash,
@@ -88,6 +91,13 @@ export const createCoach = async (
         specialization || null,
         req.tenantCenterId || null,
         seniorCoachId || null,
+        phone || null,
+        dateOfBirth || null,
+        address || null,
+        qualification || null,
+        experienceYears ?? null,
+        bankDetails || null,
+        monthlySalary ?? null,
       ]
     );
 
@@ -102,6 +112,13 @@ export const createCoach = async (
       profilePhoto: coach.profile_photo,
       specialization: coach.specialization,
       seniorCoachId: coach.senior_coach_id || null,
+      phone: coach.phone || null,
+      dateOfBirth: coach.date_of_birth || null,
+      address: coach.address || null,
+      qualification: coach.qualification || null,
+      experienceYears: coach.experience_years ?? null,
+      bankDetails: coach.bank_details || null,
+      monthlySalary: coach.monthly_salary != null ? parseFloat(coach.monthly_salary) : null,
       createdAt: coach.created_at,
       lastActive: coach.last_active,
     });
@@ -179,7 +196,22 @@ export const updateCoach = async (
       email: 'email',
       specialization: 'specialization',
       profilePhoto: 'profile_photo',
+      phone: 'phone',
+      dateOfBirth: 'date_of_birth',
+      address: 'address',
+      qualification: 'qualification',
+      experienceYears: 'experience_years',
+      bankDetails: 'bank_details',
+      monthlySalary: 'monthly_salary',
     };
+
+    // Validate monthlySalary if provided and not null
+    if (req.body.monthlySalary !== undefined && req.body.monthlySalary !== null) {
+      if (typeof req.body.monthlySalary !== 'number' || req.body.monthlySalary <= 0) {
+        res.status(400).json({ error: 'monthly_salary must be a positive number or null' });
+        return;
+      }
+    }
 
     const updates: string[] = [];
     const params: any[] = [];
@@ -188,7 +220,9 @@ export const updateCoach = async (
     for (const [bodyKey, dbColumn] of Object.entries(allowedFields)) {
       if (req.body[bodyKey] !== undefined) {
         updates.push(`${dbColumn} = $${paramIndex}`);
-        params.push(req.body[bodyKey] || null);
+        // Allow null for nullable fields; for string fields use null if empty
+        const value = req.body[bodyKey];
+        params.push(value ?? null);
         paramIndex++;
       }
     }
@@ -213,7 +247,7 @@ export const updateCoach = async (
     const result = await query(
       `UPDATE users SET ${updates.join(', ')}
        WHERE ${whereConditions.join(' AND ')}
-       RETURNING id, username, role, name, email, profile_photo, specialization, created_at, last_active`,
+       RETURNING id, username, role, name, email, profile_photo, specialization, senior_coach_id, phone, date_of_birth, address, qualification, experience_years, bank_details, monthly_salary, created_at, last_active`,
       params
     );
 
@@ -231,6 +265,14 @@ export const updateCoach = async (
       email: coach.email,
       profilePhoto: coach.profile_photo,
       specialization: coach.specialization,
+      seniorCoachId: coach.senior_coach_id || null,
+      phone: coach.phone || null,
+      dateOfBirth: coach.date_of_birth || null,
+      address: coach.address || null,
+      qualification: coach.qualification || null,
+      experienceYears: coach.experience_years ?? null,
+      bankDetails: coach.bank_details || null,
+      monthlySalary: coach.monthly_salary != null ? parseFloat(coach.monthly_salary) : null,
       createdAt: coach.created_at,
       lastActive: coach.last_active,
     });
@@ -238,6 +280,70 @@ export const updateCoach = async (
     console.error('Update coach error:', error);
     res.status(500).json({
       error: 'An error occurred while updating the coach',
+    });
+  }
+};
+
+/**
+ * GET /api/coaches/:id
+ * Get a single coach's full profile by ID.
+ * HEAD_COACH can view any coach in their center.
+ * ASSISTANT_COACH can view only their own profile.
+ */
+export const getCoach = async (
+  req: TenantRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+
+    // ASSISTANT_COACH can only access their own profile
+    if (req.user?.role === UserRole.ASSISTANT_COACH) {
+      if (req.user.id !== id) {
+        res.status(403).json({ error: 'You do not have permission to perform this action' });
+        return;
+      }
+    }
+
+    // Query coach by ID scoped to the requesting user's center
+    const result = await query(
+      `SELECT id, username, role, name, email, profile_photo, specialization, senior_coach_id,
+              phone, date_of_birth, address, qualification, experience_years, bank_details, monthly_salary,
+              created_at, last_active
+       FROM users
+       WHERE id = $1 AND center_id = $2 AND role IN ('HEAD_COACH', 'ASSISTANT_COACH')`,
+      [id, req.tenantCenterId]
+    );
+
+    if (result.rows.length === 0) {
+      res.status(404).json({ error: 'Coach not found' });
+      return;
+    }
+
+    const coach = result.rows[0];
+    res.status(200).json({
+      id: coach.id,
+      username: coach.username,
+      role: coach.role,
+      name: coach.name,
+      email: coach.email,
+      profilePhoto: coach.profile_photo,
+      specialization: coach.specialization,
+      seniorCoachId: coach.senior_coach_id || null,
+      phone: coach.phone || null,
+      dateOfBirth: coach.date_of_birth || null,
+      address: coach.address || null,
+      qualification: coach.qualification || null,
+      experienceYears: coach.experience_years ?? null,
+      bankDetails: coach.bank_details || null,
+      monthlySalary: coach.monthly_salary != null ? parseFloat(coach.monthly_salary) : null,
+      createdAt: coach.created_at,
+      lastActive: coach.last_active,
+    });
+  } catch (error) {
+    console.error('Get coach error:', error);
+    res.status(500).json({
+      error: 'An error occurred while fetching the coach profile',
     });
   }
 };

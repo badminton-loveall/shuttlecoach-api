@@ -8,6 +8,16 @@ const uuidString = (fieldName: string) =>
   z.string().regex(uuidPattern, `Invalid ${fieldName}`);
 
 /**
+ * Shared validation for monthlySalary: must be a positive number or null.
+ * Zero and negative values are rejected.
+ */
+const monthlySalarySchema = z
+  .number()
+  .positive('monthly_salary must be a positive number or null')
+  .nullable()
+  .optional();
+
+/**
  * Validation schema for creating a coach
  */
 export const createCoachSchema = z.object({
@@ -27,6 +37,36 @@ export const createCoachSchema = z.object({
   email: z.string().email('Invalid email format').optional(),
   specialization: z.string().max(100).optional(),
   profilePhoto: z.string().url('Profile photo must be a valid URL').optional(),
+  // Extended profile fields
+  phone: z.string().max(20, 'Phone must be at most 20 characters').optional(),
+  dateOfBirth: z.string().optional(),
+  address: z.string().optional(),
+  qualification: z.string().optional(),
+  experienceYears: z.number().int().min(0).optional(),
+  bankDetails: z.string().optional(),
+  monthlySalary: monthlySalarySchema,
+});
+
+/**
+ * Validation schema for updating a coach (PATCH requests).
+ * All fields are optional to support partial updates.
+ */
+export const updateCoachSchema = z.object({
+  name: z
+    .string()
+    .min(2, 'Name must be at least 2 characters')
+    .max(100, 'Name must be at most 100 characters')
+    .optional(),
+  email: z.string().email('Invalid email format').optional(),
+  specialization: z.string().max(100).optional(),
+  profilePhoto: z.string().url('Profile photo must be a valid URL').optional(),
+  phone: z.string().max(20, 'Phone must be at most 20 characters').optional(),
+  dateOfBirth: z.string().optional(),
+  address: z.string().optional(),
+  qualification: z.string().optional(),
+  experienceYears: z.number().int().min(0).optional(),
+  bankDetails: z.string().optional(),
+  monthlySalary: monthlySalarySchema,
 });
 
 /**
@@ -39,4 +79,5 @@ export const assignCoachSchema = z.object({
 });
 
 export type CreateCoachInput = z.infer<typeof createCoachSchema>;
+export type UpdateCoachInput = z.infer<typeof updateCoachSchema>;
 export type AssignCoachInput = z.infer<typeof assignCoachSchema>;
