@@ -7,6 +7,7 @@ import {
   createFee,
   listFees,
   markFeePaid,
+  revertFeePaid,
   waiveFee,
 } from '../controllers/fees';
 import { UserRole } from '../types';
@@ -65,6 +66,18 @@ router.patch(
   authorize(UserRole.HEAD_COACH),
   validateRequest(markFeePaidSchema),
   markFeePaid
+);
+
+/**
+ * PATCH /api/fees/:id/revert
+ * Revert a paid fee back to PENDING status
+ * Creates a reversal ledger entry to offset the original credit
+ * Allowed roles: HEAD_COACH
+ */
+router.patch(
+  '/:id/revert',
+  authorize(UserRole.HEAD_COACH),
+  revertFeePaid
 );
 
 /**

@@ -1,7 +1,8 @@
 import { Response } from 'express';
 import { query } from '../config/database';
 import { TenantRequest } from '../middleware/tenantScope';
-import { FeeRecord, FeeStatus, PaymentMethod } from '../types';
+import { FeeRecord, FeeStatus, PaymentMethod, LedgerReferenceType } from '../types';
+import { createCreditEntry, createReversalEntry } from '../services/ledgerService';
 
 /**
  * POST /api/fees
@@ -287,11 +288,120 @@ export const markFeePaid = async (
     );
 
     const feeRecord = mapDatabaseRowToFeeRecord(result.rows[0]);
+
+    // Create ledger CREDIT entry for the paid fee (non-blocking)
+    try {
+      const studentResult = await query(
+        'SELECT full_name FROM students WHERE id = $1',
+        [feeRecord.studentId]
+      );
+      const studentName = studentResult.rows[0]?.full_name || 'Unknown';
+      await createCreditEntry(
+        {
+          id: feeRecord.id,
+          studentId: feeRecord.studentId,
+          amount: feeRecord.amount,
+          paidDate: paidDate,
+          monthYear: feeRecord.monthYear,
+          paymentMethod: paymentMethod,
+        },
+        studentName,
+        req.tenantCenterId!
+      );
+    } catch (ledgerErr) {
+      console.error('[Fees] Failed to create ledger entry:', ledgerErr);
+      // Non-blocking: don't fail the fee update
+    }
+
     res.status(200).json(feeRecord);
   } catch (error) {
     console.error('Mark fee paid error:', error);
     res.status(500).json({
       error: 'An error occurred while marking fee as paid',
+    });
+  }
+};
+
+/**
+ * PATCH /api/fees/:id/revert
+ * Revert a paid fee back to PENDING status
+ * Creates a reversal ledger entry (DEBIT) to offset the original CREDIT
+ * Requires: HEAD_COACH role
+ */
+export const revertFeePaid = async (
+  req: TenantRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+
+    // Check if fee record exists and is currently PAID (with tenant scoping)
+    const existingConditions: string[] = ['id = $1'];
+    const existingParams: any[] = [id];
+
+    if (req.tenantCenterId) {
+      existingConditions.push('center_id = $2');
+      existingParams.push(req.tenantCenterId);
+    }
+
+    const existingResult = await query(
+      `SELECT id, status FROM fee_records WHERE ${existingConditions.join(' AND ')}`,
+      existingParams
+    );
+
+    if (existingResult.rows.length === 0) {
+      res.status(404).json({ error: 'Fee record not found' });
+      return;
+    }
+
+    const existingFee = existingResult.rows[0];
+
+    if (existingFee.status !== FeeStatus.PAID) {
+      res.status(400).json({
+        error: 'Fee is not currently paid. Only paid fees can be reverted.',
+      });
+      return;
+    }
+
+    // Revert fee status to PENDING, clear payment fields
+    const updateConditions: string[] = ['id = $1'];
+    const updateParams: any[] = [id];
+
+    if (req.tenantCenterId) {
+      updateConditions.push(`center_id = $2`);
+      updateParams.push(req.tenantCenterId);
+    }
+
+    const result = await query(
+      `UPDATE fee_records
+      SET 
+        paid_date = NULL,
+        status = 'PENDING',
+        payment_method = NULL,
+        transaction_ref = NULL
+      WHERE ${updateConditions.join(' AND ')}
+      RETURNING 
+        id, student_id, amount, month_year, due_date, paid_date,
+        status, payment_method, transaction_ref, notes,
+        created_at, updated_at`,
+      updateParams
+    );
+
+    const feeRecord = mapDatabaseRowToFeeRecord(result.rows[0]);
+
+    // Create reversal ledger entry (non-blocking)
+    try {
+      await createReversalEntry(LedgerReferenceType.FEE, id as string, req.tenantCenterId!);
+    } catch (ledgerErr) {
+      console.error('[Fees] Failed to create reversal entry:', ledgerErr);
+      // Non-blocking: don't fail the status revert
+    }
+
+    res.status(200).json(feeRecord);
+  } catch (error) {
+    console.error('Revert fee paid error:', error);
+    res.status(500).json({
+      error: 'An error occurred while reverting fee payment',
     });
   }
 };

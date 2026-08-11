@@ -584,3 +584,67 @@ export interface GetTrainingPatternsQuery {
 export interface TrainingPatternsResponse {
   report: TrainingPatternReport;
 }
+
+
+// ============================================================================
+// Ledger Types
+// ============================================================================
+
+export enum LedgerEntryType {
+  CREDIT = 'CREDIT',
+  DEBIT = 'DEBIT',
+}
+
+export enum LedgerReferenceType {
+  FEE = 'FEE',
+  SALARY = 'SALARY',
+  MANUAL = 'MANUAL',
+}
+
+export interface LedgerEntry {
+  id: string;
+  centerId: string;
+  entryType: LedgerEntryType;
+  amount: number;
+  transactionDate: string; // YYYY-MM-DD
+  description: string;
+  referenceType: LedgerReferenceType;
+  referenceId: string | null;
+  personId: string | null;
+  personName: string | null;
+  paymentMethod: string | null;
+  category: string | null;
+  createdAt: Date;
+  runningBalance?: number; // computed at query time
+}
+
+export interface LedgerQueryFilters {
+  month?: string;           // YYYY-MM
+  quarter?: string;         // Q1, Q2, Q3, Q4
+  financialYear?: string;   // YYYY-YYYY
+  fromDate?: string;        // YYYY-MM-DD
+  toDate?: string;          // YYYY-MM-DD
+  studentId?: string;
+  coachId?: string;
+}
+
+export interface LedgerQueryResult {
+  entries: LedgerEntry[];
+  summary: {
+    totalCredits: number;
+    totalDebits: number;
+    netBalance: number;
+    openingBalance: number;
+  };
+}
+
+export interface CreateManualEntryRequest {
+  entryType: LedgerEntryType;
+  amount: number;
+  transactionDate: string;
+  description: string;
+  category?: string;
+  personId?: string;
+  personName?: string;
+  paymentMethod?: string;
+}

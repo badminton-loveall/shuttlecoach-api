@@ -23,6 +23,7 @@ import batchTimeTemplateRoutes from './batchTimeTemplates';
 import batchCoachAssignmentRoutes from './batchCoachAssignments';
 import studentAssignmentRoutes from './studentAssignments';
 import onboardingChecklistRoutes from './onboardingChecklist';
+import ledgerRoutes from './ledger';
 import { getCenterInfo } from '../controllers/public/centers';
 
 const router = Router();
@@ -101,6 +102,9 @@ router.use('/admin/slug-change-requests', adminSlugChangeRequestRouter);
 
 // Onboarding checklist routes (HEAD_COACH only)
 router.use('/onboarding-checklist', onboardingChecklistRoutes);
+
+// Ledger routes (financial ledger for fee/salary tracking)
+router.use('/ledger', ledgerRoutes);
 
 // Public center info route (no auth)
 router.get('/centers/:slug/info', getCenterInfo);
