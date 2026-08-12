@@ -180,19 +180,36 @@ export const getSessionCalendarHandler = async (
         targetBatchIds = [studentResult.rows[0].batch_id];
       }
     } else {
-      // Coach with no filter - get all assigned batches (with tenant scoping)
-      if (req.tenantCenterId) {
-        const batchResult = await query(
-          `SELECT id FROM batches WHERE assigned_coach_id = $1 AND center_id = $2`,
-          [req.user.id, req.tenantCenterId]
-        );
-        targetBatchIds = batchResult.rows.map((r: any) => r.id);
+      // Coach with no filter — get batches based on role
+      if (req.user.role === 'HEAD_COACH') {
+        // HEAD_COACH sees ALL batches in their center (or all if no center)
+        if (req.tenantCenterId) {
+          const batchResult = await query(
+            `SELECT id FROM batches WHERE center_id = $1 AND is_archived = false`,
+            [req.tenantCenterId]
+          );
+          targetBatchIds = batchResult.rows.map((r: any) => r.id);
+        } else {
+          const batchResult = await query(
+            `SELECT id FROM batches WHERE is_archived = false`
+          );
+          targetBatchIds = batchResult.rows.map((r: any) => r.id);
+        }
       } else {
-        const batchResult = await query(
-          `SELECT id FROM batches WHERE assigned_coach_id = $1`,
-          [req.user.id]
-        );
-        targetBatchIds = batchResult.rows.map((r: any) => r.id);
+        // ASSISTANT_COACH sees only batches assigned to them
+        if (req.tenantCenterId) {
+          const batchResult = await query(
+            `SELECT id FROM batches WHERE assigned_coach_id = $1 AND center_id = $2 AND is_archived = false`,
+            [req.user.id, req.tenantCenterId]
+          );
+          targetBatchIds = batchResult.rows.map((r: any) => r.id);
+        } else {
+          const batchResult = await query(
+            `SELECT id FROM batches WHERE assigned_coach_id = $1 AND is_archived = false`,
+            [req.user.id]
+          );
+          targetBatchIds = batchResult.rows.map((r: any) => r.id);
+        }
       }
     }
 

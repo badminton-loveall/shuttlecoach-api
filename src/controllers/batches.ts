@@ -140,7 +140,7 @@ export const updateBatch = async (
         return;
       }
 
-      if (req.tenantCenterId && template.center_id !== req.tenantCenterId) {
+      if (req.tenantCenterId && String(template.center_id) !== String(req.tenantCenterId)) {
         res.status(400).json({ error: 'Template does not belong to this center' });
         return;
       }

@@ -94,7 +94,11 @@ export async function generateTemplateCalendarSessions(
   const curriculumWeeks = await getCurriculumWeeksForBatch(batchId);
 
   // 6. Fetch session schedule for cycle start date (to compute week numbers)
-  const cycleStartDate = await getCycleStartDate(batchId);
+  // Fall back to the start of the requested date range if no schedule exists
+  let cycleStartDate = await getCycleStartDate(batchId);
+  if (!cycleStartDate && startDate) {
+    cycleStartDate = parseDate(typeof startDate === 'string' ? startDate : formatDate(start));
+  }
 
   // 7. For each slot, find all dates in [start, end] matching the slot's day_of_week
   const sessions: TemplateCalendarSession[] = [];
