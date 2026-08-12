@@ -4,7 +4,10 @@ import { z } from 'zod';
 
 const isoDateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be a valid ISO date (YYYY-MM-DD)');
 const timeString = z.string().regex(/^\d{2}:\d{2}$/, 'Must be a valid time (HH:MM)');
-const uuidString = z.string().uuid('Must be a valid UUID');
+const uuidString = z.string().regex(
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+  'Must be a valid UUID'
+);
 const dayOfWeek = z.number().int().min(0).max(6);
 
 // --- POST /api/attendance ---

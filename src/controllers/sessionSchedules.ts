@@ -183,13 +183,13 @@ export const getSessionCalendarHandler = async (
       // Coach with no filter - get all assigned batches (with tenant scoping)
       if (req.tenantCenterId) {
         const batchResult = await query(
-          `SELECT id FROM batches WHERE (head_coach_id = $1 OR assistant_coach_id = $1) AND center_id = $2`,
+          `SELECT id FROM batches WHERE assigned_coach_id = $1 AND center_id = $2`,
           [req.user.id, req.tenantCenterId]
         );
         targetBatchIds = batchResult.rows.map((r: any) => r.id);
       } else {
         const batchResult = await query(
-          `SELECT id FROM batches WHERE head_coach_id = $1 OR assistant_coach_id = $1`,
+          `SELECT id FROM batches WHERE assigned_coach_id = $1`,
           [req.user.id]
         );
         targetBatchIds = batchResult.rows.map((r: any) => r.id);
