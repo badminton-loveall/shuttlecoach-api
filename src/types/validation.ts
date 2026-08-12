@@ -151,3 +151,10 @@ export const getTrainingPatternsQuerySchema = z.object({
   startDate: isoDateString,
   endDate: isoDateString,
 });
+
+// --- GET /api/batch-students-drills ---
+
+export const batchStudentsDrillsQuerySchema = z.object({
+  batchId: uuidString,
+  date: isoDateString,
+});

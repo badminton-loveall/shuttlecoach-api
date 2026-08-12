@@ -22,6 +22,7 @@ import membershipRoutes from './memberships';
 import { slugChangeRequestRouter, adminSlugChangeRequestRouter } from './slugChangeRequests';
 import batchTimeTemplateRoutes from './batchTimeTemplates';
 import batchCoachAssignmentRoutes from './batchCoachAssignments';
+import batchStudentsDrillsRoutes from './batchStudentsDrills';
 import studentAssignmentRoutes from './studentAssignments';
 import onboardingChecklistRoutes from './onboardingChecklist';
 import ledgerRoutes from './ledger';
@@ -74,6 +75,9 @@ router.use('/batches', batchRoutes);
 
 // Batch time template routes
 router.use('/batch-time-templates', batchTimeTemplateRoutes);
+
+// Batch students drills route (coach drill-down view)
+router.use('/batch-students-drills', batchStudentsDrillsRoutes);
 
 // Skill scores routes
 router.use('/skill-scores', skillScoresRoutes);
