@@ -19,7 +19,7 @@ export const listCenters = async (
       `SELECT
         id, name, location, contact_phone, contact_email, logo_url,
         is_active, head_coach_id, plan_type, subscription_expires_at,
-        created_at, updated_at
+        sport, created_at, updated_at
        FROM centers
        ORDER BY created_at DESC`
     );
@@ -35,6 +35,7 @@ export const listCenters = async (
       headCoachId: row.head_coach_id,
       planType: row.plan_type,
       subscriptionExpiresAt: row.subscription_expires_at,
+      sport: row.sport,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     }));
@@ -55,7 +56,7 @@ export const createCenter = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { name, location, contactPhone, contactEmail, logoUrl, planType, subscriptionExpiresAt, headCoachId } =
+    const { name, location, contactPhone, contactEmail, logoUrl, planType, subscriptionExpiresAt, headCoachId, sport } =
       req.body;
 
     if (!name) {
@@ -78,11 +79,11 @@ export const createCenter = async (
     const slug = generateSlug(name);
 
     const result = await query(
-      `INSERT INTO centers (name, location, contact_phone, contact_email, logo_url, plan_type, subscription_expires_at, head_coach_id, slug)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `INSERT INTO centers (name, location, contact_phone, contact_email, logo_url, plan_type, subscription_expires_at, head_coach_id, slug, sport)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING id, name, location, contact_phone, contact_email, logo_url,
                  is_active, head_coach_id, plan_type, subscription_expires_at,
-                 slug, created_at, updated_at`,
+                 slug, sport, created_at, updated_at`,
       [
         name,
         location || null,
@@ -93,6 +94,7 @@ export const createCenter = async (
         subscriptionExpiresAt || null,
         headCoachId || null,
         slug,
+        sport || null,
       ]
     );
 
@@ -118,26 +120,26 @@ export const createCenter = async (
 
           // Check if user already exists with this email/username
           let ownerId: string;
-          let ownerUsername: string;
+          let ownerName: string;
           const existingOwner = await query(
-            'SELECT id, username FROM users WHERE LOWER(email) = $1 OR LOWER(username) = $1',
+            'SELECT id, username, name FROM users WHERE LOWER(email) = $1 OR LOWER(username) = $1',
             [ownerEmail]
           );
 
           if (existingOwner.rows.length > 0) {
             // Existing user — just assign them as head coach
             ownerId = existingOwner.rows[0].id;
-            ownerUsername = existingOwner.rows[0].username;
+            ownerName = existingOwner.rows[0].name || existingOwner.rows[0].username;
           } else {
             // Create new user with email as username, no password (they'll set it via reset link)
             const newUser = await query(
               `INSERT INTO users (username, email, role, name, center_id, created_at, last_active)
                VALUES ($1, $2, 'HEAD_COACH', $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-               RETURNING id, username`,
+               RETURNING id, username, name`,
               [ownerEmail, ownerEmail, name, center.id]
             );
             ownerId = newUser.rows[0].id;
-            ownerUsername = newUser.rows[0].username;
+            ownerName = newUser.rows[0].name || newUser.rows[0].username;
           }
 
           // Assign as head coach of this center
@@ -173,7 +175,7 @@ export const createCenter = async (
           await sendCenterWelcomeEmail({
             centerName: center.name,
             headCoachEmail: ownerEmail,
-            userName: ownerUsername,
+            userName: ownerName,
             resetLink,
             loginUrl,
             centerId: center.id,
@@ -238,6 +240,7 @@ export const createCenter = async (
       headCoachId: center.head_coach_id,
       planType: center.plan_type,
       subscriptionExpiresAt: center.subscription_expires_at,
+      sport: center.sport,
       createdAt: center.created_at,
       updatedAt: center.updated_at,
     });
@@ -267,6 +270,7 @@ export const updateCenter = async (
       planType: 'plan_type',
       subscriptionExpiresAt: 'subscription_expires_at',
       slug: 'slug',
+      sport: 'sport',
     };
 
     const setClauses: string[] = [];
@@ -326,7 +330,7 @@ export const updateCenter = async (
       `UPDATE centers SET ${setClauses.join(', ')} WHERE id = ${idParam}
        RETURNING id, name, location, contact_phone, contact_email, logo_url,
                  is_active, head_coach_id, plan_type, subscription_expires_at,
-                 slug, created_at, updated_at`,
+                 slug, sport, created_at, updated_at`,
       values
     );
 
@@ -349,6 +353,7 @@ export const updateCenter = async (
       planType: center.plan_type,
       subscriptionExpiresAt: center.subscription_expires_at,
       slug: center.slug,
+      sport: center.sport,
       createdAt: center.created_at,
       updatedAt: center.updated_at,
     });

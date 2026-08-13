@@ -2,10 +2,10 @@ import { Router } from 'express';
 import { authenticate, authorize } from '../middleware/auth';
 import { centerActive } from '../middleware/centerActive';
 import { tenantScope } from '../middleware/tenantScope';
-import { createDrill, listDrills, updateDrill, archiveDrill } from '../controllers/drills';
+import { createDrill, listDrills, updateDrill, archiveDrill, listMarketplaceDrills, adoptDrill, adoptAllDrills } from '../controllers/drills';
 import { UserRole } from '../types';
 import { validateRequest, validateQuery } from '../middleware/validation';
-import { createDrillSchema, updateDrillSchema, listDrillsQuerySchema } from '../validators/drill.schemas';
+import { createDrillSchema, updateDrillSchema, listDrillsQuerySchema, marketplaceQuerySchema, adoptDrillSchema } from '../validators/drill.schemas';
 
 const router = Router();
 
@@ -36,6 +36,41 @@ router.post(
   authorize(UserRole.HEAD_COACH),
   validateRequest(createDrillSchema),
   createDrill
+);
+
+/**
+ * GET /api/drills/marketplace
+ * Browse global drills filtered by center sport
+ * Allowed roles: HEAD_COACH, ASSISTANT_COACH
+ */
+router.get(
+  '/marketplace',
+  authorize(UserRole.HEAD_COACH, UserRole.ASSISTANT_COACH),
+  validateQuery(marketplaceQuerySchema),
+  listMarketplaceDrills
+);
+
+/**
+ * POST /api/drills/adopt
+ * Adopt a global drill into center library
+ * Allowed roles: HEAD_COACH
+ */
+router.post(
+  '/adopt',
+  authorize(UserRole.HEAD_COACH),
+  validateRequest(adoptDrillSchema),
+  adoptDrill
+);
+
+/**
+ * POST /api/drills/adopt-all
+ * Adopt all available marketplace drills in one go
+ * Allowed roles: HEAD_COACH
+ */
+router.post(
+  '/adopt-all',
+  authorize(UserRole.HEAD_COACH),
+  adoptAllDrills
 );
 
 /**

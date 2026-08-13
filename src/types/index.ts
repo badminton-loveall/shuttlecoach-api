@@ -17,6 +17,7 @@ export interface Center {
   headCoachId?: string;
   planType?: string;
   subscriptionExpiresAt?: Date;
+  sport: Sport | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -121,12 +122,19 @@ export interface FeeRecord {
   updatedAt: Date;
 }
 
+// Sport Types
+export type Sport = 'badminton' | 'tennis' | 'table_tennis' | 'squash';
+export const SUPPORTED_SPORTS: Sport[] = ['badminton', 'tennis', 'table_tennis', 'squash'];
+
 // Curriculum Types
 export interface Drill {
   id: string;
   name: string;
   description: string;
   category: string;
+  sport: Sport;
+  centerId: string | null;       // NULL = global drill
+  sourceDrillId: string | null;  // NULL = original, non-null = adopted from global
 }
 
 export interface WeekPlan {
@@ -647,4 +655,34 @@ export interface CreateManualEntryRequest {
   personId?: string;
   personName?: string;
   paymentMethod?: string;
+}
+
+
+// ============================================================================
+// Drill Marketplace Types
+// ============================================================================
+
+export interface CreateGlobalDrillRequest {
+  name: string;
+  description: string;
+  category: string;
+  sport: Sport;
+}
+
+export interface MarketplaceQuery {
+  category?: string;
+  search?: string;
+}
+
+export interface AdoptDrillRequest {
+  drillId: string;
+}
+
+export interface AdoptDrillResponse {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  sport: Sport;
+  sourceDrillId: string;
 }

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authenticate, authorize } from '../middleware/auth';
+import { validateRequest, validateQuery } from '../middleware/validation';
 import { UserRole } from '../types';
 import {
   listCenters,
@@ -11,6 +12,17 @@ import { assignCoach, unassignCoach } from '../controllers/admin/coachAssignment
 import { toggleCenterActivation } from '../controllers/admin/centerActivation';
 import { getDashboard } from '../controllers/admin/dashboard';
 import { inviteCoach, resetCoachPassword } from '../controllers/admin/coachActions';
+import {
+  listGlobalDrills,
+  createGlobalDrill,
+  updateGlobalDrill,
+  archiveGlobalDrill,
+} from '../controllers/admin/drills';
+import {
+  createGlobalDrillSchema,
+  updateDrillSchema,
+  adminListDrillsQuerySchema,
+} from '../validators/drill.schemas';
 
 const router = Router();
 
@@ -77,5 +89,29 @@ router.post('/centers/:id/invite-coach', inviteCoach);
  * Generate a password reset token and send email to head coach
  */
 router.post('/centers/:id/reset-coach-password', resetCoachPassword);
+
+/**
+ * GET /api/admin/drills
+ * List global drills (filterable by sport, category, search)
+ */
+router.get('/drills', validateQuery(adminListDrillsQuerySchema), listGlobalDrills);
+
+/**
+ * POST /api/admin/drills
+ * Create a new global drill
+ */
+router.post('/drills', validateRequest(createGlobalDrillSchema), createGlobalDrill);
+
+/**
+ * PATCH /api/admin/drills/:id
+ * Update a global drill
+ */
+router.patch('/drills/:id', validateRequest(updateDrillSchema), updateGlobalDrill);
+
+/**
+ * DELETE /api/admin/drills/:id
+ * Archive a global drill (soft-delete)
+ */
+router.delete('/drills/:id', archiveGlobalDrill);
 
 export default router;
