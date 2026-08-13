@@ -40,13 +40,13 @@ export const createCoach = async (
 
     // Check if username already exists
     const existingUser = await query(
-      'SELECT id FROM users WHERE username = $1',
+      'SELECT id FROM users WHERE LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($1)',
       [username]
     );
 
     if (existingUser.rows.length > 0) {
       res.status(400).json({
-        error: 'Username already exists',
+        error: 'A user with this email already exists',
       });
       return;
     }
@@ -175,8 +175,18 @@ export const createCoach = async (
         }
       });
     }
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Create coach error:', error);
+    
+    // Handle unique constraint violations
+    const errMsg = error instanceof Error ? error.message : String(error);
+    if (errMsg.includes('unique') || errMsg.includes('duplicate') || errMsg.includes('23505')) {
+      res.status(400).json({
+        error: 'A user with this email already exists',
+      });
+      return;
+    }
+    
     res.status(500).json({
       error: 'An error occurred while creating the coach account',
     });
