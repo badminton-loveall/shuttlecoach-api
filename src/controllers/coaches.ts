@@ -28,12 +28,15 @@ export const createCoach = async (
     } = req.body;
 
     // Validate required fields
-    if (!name || !username || !password) {
+    if (!name || !username) {
       res.status(400).json({
-        error: 'Name, username, and password are required',
+        error: 'Name and username (email) are required',
       });
       return;
     }
+
+    // If no password provided, generate a random one (coach sets it via email link)
+    const actualPassword = password || generateResetToken().slice(0, 16);
 
     // Check if username already exists
     const existingUser = await query(
@@ -74,7 +77,7 @@ export const createCoach = async (
     const assignedRole = seniorCoachId ? UserRole.ASSISTANT_COACH : UserRole.HEAD_COACH;
 
     // Hash password
-    const passwordHash = await hashPassword(password);
+    const passwordHash = await hashPassword(actualPassword);
 
     // Insert new coach with center_id, senior_coach_id, and extended profile fields
     const result = await query(

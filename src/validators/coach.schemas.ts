@@ -24,12 +24,12 @@ export const createCoachSchema = z.object({
   username: z
     .string()
     .min(3, 'Username must be at least 3 characters')
-    .max(50, 'Username must be at most 50 characters')
-    .regex(/^[a-zA-Z0-9_]+$/, 'Username can only contain letters, numbers, and underscores'),
+    .max(100, 'Username must be at most 100 characters'),
   password: z
     .string()
     .min(6, 'Password must be at least 6 characters')
-    .max(100, 'Password must be at most 100 characters'),
+    .max(100, 'Password must be at most 100 characters')
+    .optional(),
   name: z
     .string()
     .min(2, 'Name must be at least 2 characters')
