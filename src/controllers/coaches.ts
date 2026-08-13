@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import crypto from 'crypto';
 import { query } from '../config/database';
 import { hashPassword } from '../utils/auth';
 import { generateResetToken, hashToken } from '../utils/tokenGenerator';
@@ -36,7 +37,9 @@ export const createCoach = async (
     }
 
     // If no password provided, generate a random one (coach sets it via email link)
-    const actualPassword = password || generateResetToken().slice(0, 16);
+    const actualPassword = (password && typeof password === 'string' && password.length > 0)
+      ? password
+      : crypto.randomBytes(16).toString('hex');
 
     // Check if username already exists
     const existingUser = await query(
@@ -74,16 +77,17 @@ export const createCoach = async (
     }
 
     // Determine role based on seniorCoachId presence
-    const assignedRole = seniorCoachId ? UserRole.ASSISTANT_COACH : UserRole.HEAD_COACH;
+    // Default to ASSISTANT_COACH when created by head coach
+    const assignedRole = UserRole.ASSISTANT_COACH;
 
     // Hash password
     const passwordHash = await hashPassword(actualPassword);
 
-    // Insert new coach with center_id, senior_coach_id, and extended profile fields
+    // Insert new coach
     const result = await query(
       `INSERT INTO users (username, password_hash, role, name, email, profile_photo, specialization, center_id, senior_coach_id, phone, date_of_birth, address, qualification, experience_years, bank_details, monthly_salary, created_at, last_active)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-       RETURNING id, username, role, name, email, profile_photo, specialization, senior_coach_id, phone, date_of_birth, address, qualification, experience_years, bank_details, monthly_salary, created_at, last_active`,
+       RETURNING id, username, role, name, email, profile_photo, specialization, center_id, senior_coach_id, phone, date_of_birth, address, qualification, experience_years, bank_details, monthly_salary, created_at, last_active`,
       [
         username,
         passwordHash,
@@ -114,6 +118,7 @@ export const createCoach = async (
       email: coach.email,
       profilePhoto: coach.profile_photo,
       specialization: coach.specialization,
+      centerId: coach.center_id,
       seniorCoachId: coach.senior_coach_id || null,
       phone: coach.phone || null,
       dateOfBirth: coach.date_of_birth || null,

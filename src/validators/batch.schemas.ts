@@ -21,6 +21,8 @@ export const createBatchSchema = z.object({
   start_time: z.string().max(10).optional(),
   end_time: z.string().max(10).optional(),
   description: z.string().max(500).optional(),
+  template_id: uuidString('template ID').nullable().optional(),
+  curriculum_id: uuidString('curriculum ID').nullable().optional(),
 });
 
 export const updateBatchSchema = z.object({
@@ -35,6 +37,8 @@ export const updateBatchSchema = z.object({
   start_time: z.string().max(10).optional(),
   end_time: z.string().max(10).optional(),
   description: z.string().max(500).optional(),
+  template_id: uuidString('template ID').nullable().optional(),
+  curriculum_id: uuidString('curriculum ID').nullable().optional(),
 });
 
 export type CreateBatchInput = z.infer<typeof createBatchSchema>;
