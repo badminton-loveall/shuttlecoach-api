@@ -62,16 +62,16 @@ export async function markAttendance(
     throw new Error(dateError);
   }
 
-  // Validate batch exists (with tenant scoping)
+  // Validate batch exists (with tenant scoping) and get its center_id
   let batchCheck;
   if (centerId) {
     batchCheck = await query(
-      'SELECT id FROM batches WHERE id = $1 AND is_archived = false AND center_id = $2',
+      'SELECT id, center_id FROM batches WHERE id = $1 AND is_archived = false AND center_id = $2',
       [batchId, centerId]
     );
   } else {
     batchCheck = await query(
-      'SELECT id FROM batches WHERE id = $1 AND is_archived = false',
+      'SELECT id, center_id FROM batches WHERE id = $1 AND is_archived = false',
       [batchId]
     );
   }
@@ -79,13 +79,16 @@ export async function markAttendance(
     throw new Error('Batch not found');
   }
 
+  // Use the batch's center_id for the attendance record (guaranteed NOT NULL)
+  const resolvedCenterId: string = batchCheck.rows[0].center_id;
+
   // Upsert each attendance record
   let upsertedCount = 0;
 
   for (const record of records) {
     await query(
-      `INSERT INTO attendance_records (student_id, batch_id, session_date, status, leave_type, marked_by)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO attendance_records (student_id, batch_id, session_date, status, leave_type, marked_by, center_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (student_id, batch_id, session_date)
        DO UPDATE SET
          status = EXCLUDED.status,
@@ -99,6 +102,7 @@ export async function markAttendance(
         record.status,
         record.leaveType || null,
         markedBy,
+        resolvedCenterId,
       ]
     );
     upsertedCount++;

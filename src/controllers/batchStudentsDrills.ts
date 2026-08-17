@@ -119,6 +119,24 @@ export const getBatchStudentsDrills = async (
       weekNumber = Math.max(1, Math.min(8, computed));
     }
 
+    // Fallback: if no session_schedule exists (template-based batches),
+    // derive week number from the batch's created_at date
+    if (weekNumber === null) {
+      const batchCreatedResult = await query(
+        `SELECT created_at FROM batches WHERE id = $1`,
+        [batchId]
+      );
+      if (batchCreatedResult.rows.length > 0 && batchCreatedResult.rows[0].created_at) {
+        const createdAt = new Date(batchCreatedResult.rows[0].created_at);
+        const diffMs = targetDate.getTime() - createdAt.getTime();
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        if (diffDays >= 0) {
+          const computed = Math.floor(diffDays / 7) + 1;
+          weekNumber = Math.max(1, Math.min(8, computed));
+        }
+      }
+    }
+
     // --- Get drills for each student ---
     const studentsWithDrills = await Promise.all(
       students.map(async (student: any) => {
@@ -139,6 +157,16 @@ export const getBatchStudentsDrills = async (
               `SELECT weeks FROM curriculum_plans
                WHERE batch_id = $1 AND student_id IS NULL AND is_archived = false
                ORDER BY created_at DESC LIMIT 1`,
+              [batchId]
+            );
+          }
+
+          // Fallback to the batch's linked course (curriculum_id → courses.weeks)
+          if (planResult.rows.length === 0) {
+            planResult = await query(
+              `SELECT c.weeks FROM courses c
+               INNER JOIN batches b ON b.curriculum_id = c.id
+               WHERE b.id = $1`,
               [batchId]
             );
           }
