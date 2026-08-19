@@ -6,15 +6,19 @@ interface SendResetEmailParams {
   userName: string;
 }
 
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: parseInt(process.env.SMTP_PORT || '587', 10),
-  secure: parseInt(process.env.SMTP_PORT || '587', 10) === 465,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
+function createTransporter() {
+  const port = parseInt(process.env.SMTP_PORT || '465', 10);
+  console.log(`[EmailService] SMTP config — host:${process.env.SMTP_HOST} port:${port} user:${process.env.SMTP_USER ? process.env.SMTP_USER : 'MISSING'}`);
+  return nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port,
+    secure: port === 465,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  });
+}
 
 /**
  * Sends a password reset email with the provided reset link.
@@ -27,7 +31,8 @@ export async function sendPasswordResetEmail({
   userName,
 }: SendResetEmailParams): Promise<void> {
   try {
-    await transporter.sendMail({
+    const transporter = createTransporter();
+    const info = await transporter.sendMail({
       from: process.env.SMTP_FROM || 'noreply@shuttlecoach.app',
       to,
       subject: 'Reset Your Password - ShuttleCoach',
@@ -51,8 +56,9 @@ export async function sendPasswordResetEmail({
         </div>
       `,
     });
-  } catch (error) {
-    console.error('Failed to send password reset email:', error);
+    console.log(`[EmailService] Password reset sent to:${to} messageId:${info.messageId}`);
+  } catch (error: any) {
+    console.error(`[EmailService] Failed to send password reset — code:${error.code} response:${error.response} message:${error.message}`);
     // Intentionally swallowed — do not throw to prevent enumeration leaks
   }
 }

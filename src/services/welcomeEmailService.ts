@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import type { Transporter } from 'nodemailer';
 
 interface SendCenterWelcomeEmailParams {
   centerName: string;
@@ -19,15 +20,25 @@ interface SendCoachWelcomeEmailParams {
   centerId?: string;
 }
 
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: parseInt(process.env.SMTP_PORT || '587', 10),
-  secure: parseInt(process.env.SMTP_PORT || '587', 10) === 465,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
+/**
+ * Create transporter lazily so env vars are read at call time, not module load.
+ * Vercel serverless functions may not have env vars injected at module init.
+ */
+function createTransporter(): Transporter {
+  const host = process.env.SMTP_HOST;
+  const port = parseInt(process.env.SMTP_PORT || '465', 10);
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
+
+  console.log(`[WelcomeEmail] SMTP config — host:${host} port:${port} user:${user ? user : 'MISSING'}`);
+
+  return nodemailer.createTransport({
+    host,
+    port,
+    secure: port === 465,
+    auth: { user, pass },
+  });
+}
 
 /**
  * Validates that an email address is non-empty, non-whitespace, and has
@@ -203,19 +214,26 @@ export async function sendCenterWelcomeEmail({
     html,
   };
 
+  console.log(`[WelcomeEmail] Sending to: ${headCoachEmail} for center: ${centerId || 'unknown'}`);
+
+  const transporter = createTransporter();
+
   try {
-    await transporter.sendMail(mailOptions);
-  } catch (firstError) {
-    // Retry once after 5-second delay for transient failures
-    await new Promise((resolve) => setTimeout(resolve, 5000));
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`[WelcomeEmail] Sent OK — messageId:${info.messageId} accepted:${JSON.stringify(info.accepted)} rejected:${JSON.stringify(info.rejected)}`);
+  } catch (firstError: any) {
+    console.error(`[WelcomeEmail] First attempt failed — code:${firstError.code} response:${firstError.response} message:${firstError.message}`);
+    // Retry once after 3-second delay
+    await new Promise((resolve) => setTimeout(resolve, 3000));
     try {
-      await transporter.sendMail(mailOptions);
-    } catch (retryError) {
+      const info = await transporter.sendMail(mailOptions);
+      console.log(`[WelcomeEmail] Retry sent OK — messageId:${info.messageId}`);
+    } catch (retryError: any) {
       console.error(
-        `[WelcomeEmail] Failed to send welcome email for center ${centerId || 'unknown'} after retry:`,
-        retryError
+        `[WelcomeEmail] Retry also failed — code:${retryError.code} response:${retryError.response} message:${retryError.message}`
       );
-      // Return without throwing — never block center creation
+      // Throw so the invite endpoint returns a real error to the admin
+      throw new Error(`Email delivery failed: ${retryError.message}`);
     }
   }
 }
@@ -367,12 +385,14 @@ export async function sendCoachWelcomeEmail({
   };
 
   try {
-    await transporter.sendMail(mailOptions);
+    const t = createTransporter();
+    await t.sendMail(mailOptions);
   } catch (firstError) {
     // Retry once after 5-second delay for transient failures
     await new Promise((resolve) => setTimeout(resolve, 5000));
     try {
-      await transporter.sendMail(mailOptions);
+      const t = createTransporter();
+      await t.sendMail(mailOptions);
     } catch (retryError) {
       console.error(
         `[WelcomeEmail] Failed to send coach welcome email for center ${centerId || 'unknown'} after retry:`,
@@ -526,12 +546,14 @@ export async function sendStudentWelcomeEmail({
   };
 
   try {
-    await transporter.sendMail(mailOptions);
+    const t = createTransporter();
+    await t.sendMail(mailOptions);
   } catch (firstError) {
     // Retry once after 5-second delay for transient failures
     await new Promise((resolve) => setTimeout(resolve, 5000));
     try {
-      await transporter.sendMail(mailOptions);
+      const t = createTransporter();
+      await t.sendMail(mailOptions);
     } catch (retryError) {
       console.error(
         `[WelcomeEmail] Failed to send student welcome email for center ${centerId || 'unknown'} after retry:`,
