@@ -185,17 +185,17 @@ export const updateCourse = async (
     // Validate weeks if provided
     let numberedWeeks: any[] | undefined;
     if (weeks !== undefined) {
-      if (!Array.isArray(weeks) || weeks.length < 1 || weeks.length > 52) {
-        res.status(400).json({ error: 'Course must have between 1 and 52 weeks' });
+      if (!Array.isArray(weeks) || weeks.length > 52) {
+        res.status(400).json({ error: 'Course must not exceed 52 weeks' });
         return;
       }
 
-      // Validate each week structure
+      // Validate each week structure — only drills array is required; focusArea and objective are optional
       for (let i = 0; i < weeks.length; i++) {
         const week = weeks[i];
-        if (!week.focusArea || !week.objective || !Array.isArray(week.drills)) {
+        if (!Array.isArray(week.drills)) {
           res.status(400).json({
-            error: `Week ${i + 1} must have focusArea, objective, and drills array`,
+            error: `Week ${i + 1} must have a drills array`,
           });
           return;
         }
