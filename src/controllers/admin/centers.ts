@@ -110,123 +110,72 @@ export const createCenter = async (
       console.error(`[CreateCenter] Failed to create onboarding checklist for center ${center.id}:`, checklistError);
     }
 
-    // Auto-create center owner account from contactEmail and send welcome email
-    // If contactEmail is provided and no headCoachId was explicitly assigned,
-    // create (or find) a HEAD_COACH user for this email and assign them.
-    if (contactEmail && !headCoachId) {
-      setImmediate(async () => {
-        try {
-          const ownerEmail = contactEmail.trim().toLowerCase();
+    // Auto-create center owner account from contactEmail and send welcome email.
+    // Runs inline (not fire-and-forget) so errors are visible in logs.
+    // Failure here is non-fatal — center is already created; admin can resend invite.
+    if (contactEmail) {
+      try {
+        const ownerEmail = contactEmail.trim().toLowerCase();
 
-          // Check if user already exists with this email/username
-          let ownerId: string;
-          let ownerName: string;
-          const existingOwner = await query(
-            'SELECT id, username, name FROM users WHERE LOWER(email) = $1 OR LOWER(username) = $1',
-            [ownerEmail]
+        // Find or create user with this email
+        let ownerId: string;
+        let ownerName: string;
+        const existingOwner = await query(
+          'SELECT id, username, name FROM users WHERE LOWER(email) = $1 OR LOWER(username) = $1',
+          [ownerEmail]
+        );
+
+        if (existingOwner.rows.length > 0) {
+          ownerId = existingOwner.rows[0].id;
+          ownerName = existingOwner.rows[0].name || existingOwner.rows[0].username;
+        } else {
+          const newUser = await query(
+            `INSERT INTO users (username, email, password_hash, role, name, center_id, created_at, last_active)
+             VALUES ($1, $2, '!', 'HEAD_COACH', $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+             RETURNING id, username, name`,
+            [ownerEmail, ownerEmail, name, center.id]
           );
-
-          if (existingOwner.rows.length > 0) {
-            // Existing user — just assign them as head coach
-            ownerId = existingOwner.rows[0].id;
-            ownerName = existingOwner.rows[0].name || existingOwner.rows[0].username;
-          } else {
-            // Create new user with email as username, no password (they'll set it via reset link)
-            const newUser = await query(
-              `INSERT INTO users (username, email, role, name, center_id, created_at, last_active)
-               VALUES ($1, $2, 'HEAD_COACH', $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-               RETURNING id, username, name`,
-              [ownerEmail, ownerEmail, name, center.id]
-            );
-            ownerId = newUser.rows[0].id;
-            ownerName = newUser.rows[0].name || newUser.rows[0].username;
-          }
-
-          // Assign as head coach of this center
-          await query('UPDATE centers SET head_coach_id = $1 WHERE id = $2', [ownerId, center.id]);
-
-          // Create membership for multi-center access
-          await query(
-            `INSERT INTO user_center_memberships (user_id, center_id, role)
-             VALUES ($1, $2, 'HEAD_COACH')
-             ON CONFLICT (user_id, center_id, role) DO NOTHING`,
-            [ownerId, center.id]
-          );
-
-          // Generate password reset token
-          const rawToken = generateResetToken();
-          const tokenHash = hashToken(rawToken);
-          const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-
-          // Invalidate existing tokens for this user
-          await query('DELETE FROM password_reset_tokens WHERE user_id = $1', [ownerId]);
-
-          // Store hashed token
-          await query(
-            'INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
-            [ownerId, tokenHash, expiresAt.toISOString()]
-          );
-
-          // Generate URLs
-          const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-          const resetLink = `${frontendUrl}/reset-password?token=${rawToken}`;
-          const loginUrl = `${frontendUrl}/login`;
-
-          await sendCenterWelcomeEmail({
-            centerName: center.name,
-            headCoachEmail: ownerEmail,
-            userName: ownerName,
-            resetLink,
-            loginUrl,
-            centerId: center.id,
-          });
-        } catch (emailError) {
-          console.error(`[CreateCenter] Failed to create owner account / send welcome email for center ${center.id}:`, emailError);
+          ownerId = newUser.rows[0].id;
+          ownerName = newUser.rows[0].name || newUser.rows[0].username;
         }
-      });
-    } else if (center.head_coach_id) {
-      // Legacy path: headCoachId was explicitly provided — send welcome email to that user
-      setImmediate(async () => {
-        try {
-          const coachResult = await query(
-            'SELECT id, email, username, name FROM users WHERE id = $1',
-            [center.head_coach_id]
-          );
 
-          if (coachResult.rows.length === 0) {
-            console.warn(`[CreateCenter] Head coach ${center.head_coach_id} not found for welcome email.`);
-            return;
-          }
+        // Assign as head coach and ensure membership
+        await query('UPDATE centers SET head_coach_id = $1 WHERE id = $2', [ownerId, center.id]);
+        await query(
+          `INSERT INTO user_center_memberships (user_id, center_id, role)
+           VALUES ($1, $2, 'HEAD_COACH')
+           ON CONFLICT (user_id, center_id, role) DO NOTHING`,
+          [ownerId, center.id]
+        );
 
-          const coach = coachResult.rows[0];
+        // Generate 24-hour password setup token
+        const rawToken = generateResetToken();
+        const tokenHash = hashToken(rawToken);
+        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        await query('DELETE FROM password_reset_tokens WHERE user_id = $1', [ownerId]);
+        await query(
+          'INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
+          [ownerId, tokenHash, expiresAt.toISOString()]
+        );
 
-          // Generate password reset token
-          const rawToken = generateResetToken();
-          const tokenHash = hashToken(rawToken);
-          const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+        const resetLink = `${frontendUrl}/reset-password?token=${rawToken}`;
+        const loginUrl = `${frontendUrl}/login`;
 
-          await query('DELETE FROM password_reset_tokens WHERE user_id = $1', [coach.id]);
-          await query(
-            'INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
-            [coach.id, tokenHash, expiresAt.toISOString()]
-          );
+        await sendCenterWelcomeEmail({
+          centerName: center.name,
+          headCoachEmail: ownerEmail,
+          userName: ownerName,
+          resetLink,
+          loginUrl,
+          centerId: center.id,
+        });
 
-          const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-          const resetLink = `${frontendUrl}/reset-password?token=${rawToken}`;
-          const loginUrl = `${frontendUrl}/login`;
-
-          await sendCenterWelcomeEmail({
-            centerName: center.name,
-            headCoachEmail: coach.email,
-            userName: coach.username || coach.name,
-            resetLink,
-            loginUrl,
-            centerId: center.id,
-          });
-        } catch (emailError) {
-          console.error(`[CreateCenter] Failed to send welcome email for center ${center.id}:`, emailError);
-        }
-      });
+        console.log(`[CreateCenter] Welcome email sent to ${ownerEmail} for center ${center.id}`);
+      } catch (ownerError) {
+        // Log but don't fail the request — center was created; admin can resend invite
+        console.error(`[CreateCenter] Failed to create owner account / send welcome email for center ${center.id}:`, ownerError);
+      }
     }
 
     res.status(201).json({

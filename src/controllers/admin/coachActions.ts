@@ -6,15 +6,24 @@ import { sendPasswordResetEmail } from '../../services/emailService';
 import { sendCenterWelcomeEmail } from '../../services/welcomeEmailService';
 
 /**
- * Shared helper: resolve head coach for a given center.
- * Returns the head coach user row or sends an error response and returns null.
- * If no head_coach_id is set but contactEmail exists, looks up the user by contactEmail.
+ * Resolves (or creates) the center owner account from the center's contact_email.
+ *
+ * This is purely a center-account concept — no "head coach" terminology.
+ * The center owner is the person who logs in with the center's contact email.
+ *
+ * Flow:
+ *  1. Load center — must exist and have a contact_email.
+ *  2. Look up existing user by email.
+ *  3. If not found, auto-create a HEAD_COACH user from the contact email.
+ *  4. Ensure head_coach_id and membership are set on the center.
+ *  5. Return the owner record.
  */
-async function resolveHeadCoach(
+async function resolveCenterOwner(
   centerId: string,
   res: Response
 ): Promise<{ id: string; name: string; email: string } | null> {
-  // 1. Verify center exists
+
+  // 1. Load center
   const centerResult = await query(
     'SELECT id, name, head_coach_id, contact_email FROM centers WHERE id = $1',
     [centerId]
@@ -27,89 +36,71 @@ async function resolveHeadCoach(
 
   const center = centerResult.rows[0];
 
-  // 2. Try head_coach_id first, then fall back to contact_email lookup
-  let coach: { id: string; name: string; email: string } | null = null;
+  if (!center.contact_email) {
+    res.status(422).json({ error: 'This center has no contact email set. Please edit the center and add a contact email first.' });
+    return null;
+  }
 
+  const ownerEmail = center.contact_email.trim().toLowerCase();
+
+  // 2. Look up existing user by email
+  let owner: { id: string; name: string; email: string } | null = null;
+
+  // First try head_coach_id if already set (fast path)
   if (center.head_coach_id) {
-    const coachResult = await query(
+    const ownerResult = await query(
       'SELECT id, name, email FROM users WHERE id = $1',
       [center.head_coach_id]
     );
-    if (coachResult.rows.length > 0) {
-      coach = coachResult.rows[0];
+    if (ownerResult.rows.length > 0) {
+      owner = ownerResult.rows[0];
     }
   }
 
-  // Fallback: look up user by center's contact_email
-  if (!coach && center.contact_email) {
-    const ownerEmail = center.contact_email.trim().toLowerCase();
-    const coachResult = await query(
+  // Fall back to email lookup
+  if (!owner) {
+    const emailResult = await query(
       'SELECT id, name, email FROM users WHERE LOWER(email) = $1 OR LOWER(username) = $1',
       [ownerEmail]
     );
-    if (coachResult.rows.length > 0) {
-      coach = coachResult.rows[0];
-      // Ensure center has head_coach_id set
-      if (!center.head_coach_id) {
-        await query('UPDATE centers SET head_coach_id = $1 WHERE id = $2', [coach!.id, centerId]);
-      }
-      // Ensure membership exists
-      await query(
-        `INSERT INTO user_center_memberships (user_id, center_id, role)
-         VALUES ($1, $2, 'HEAD_COACH')
-         ON CONFLICT (user_id, center_id, role) DO NOTHING`,
-        [coach!.id, centerId]
-      );
-    } else {
-      // Auto-create the user from contactEmail
-      try {
-        const newUser = await query(
-          `INSERT INTO users (username, email, role, name, center_id, created_at, last_active)
-           VALUES ($1, $2, 'HEAD_COACH', $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-           RETURNING id, name, email`,
-          [ownerEmail, ownerEmail, center.name || ownerEmail, centerId]
-        );
-        if (newUser.rows.length > 0) {
-          coach = newUser.rows[0];
-          await query('UPDATE centers SET head_coach_id = $1 WHERE id = $2', [coach!.id, centerId]);
-          // Create membership
-          await query(
-            `INSERT INTO user_center_memberships (user_id, center_id, role)
-             VALUES ($1, $2, 'HEAD_COACH')
-             ON CONFLICT (user_id, center_id, role) DO NOTHING`,
-            [coach!.id, centerId]
-          );
-        }
-      } catch (insertErr) {
-        console.error('[resolveHeadCoach] Failed to auto-create user:', insertErr);
-      }
+    if (emailResult.rows.length > 0) {
+      owner = emailResult.rows[0];
     }
   }
 
-  if (!coach) {
-    res.status(422).json({ error: 'No head coach is assigned to this center' });
-    return null;
+  // 3. Auto-create user if still not found
+  // password_hash is NOT NULL — use a locked placeholder ('!') that bcrypt will never match
+  if (!owner) {
+    const newUser = await query(
+      `INSERT INTO users (username, email, password_hash, role, name, center_id, created_at, last_active)
+       VALUES ($1, $2, '!', 'HEAD_COACH', $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+       RETURNING id, name, email`,
+      [ownerEmail, ownerEmail, center.name || ownerEmail, centerId]
+    );
+    owner = newUser.rows[0];
+    console.log(`[CenterOwner] Auto-created user for ${ownerEmail}`);
   }
 
-  if (!coach.email) {
-    res.status(422).json({ error: 'Head coach has no email address on file' });
-    return null;
+  // 4. Ensure center.head_coach_id and membership are in sync
+  if (!center.head_coach_id || center.head_coach_id !== owner!.id) {
+    await query('UPDATE centers SET head_coach_id = $1 WHERE id = $2', [owner!.id, centerId]);
   }
+  await query(
+    `INSERT INTO user_center_memberships (user_id, center_id, role)
+     VALUES ($1, $2, 'HEAD_COACH')
+     ON CONFLICT (user_id, center_id, role) DO NOTHING`,
+    [owner!.id, centerId]
+  );
 
-  return coach;
+  return owner;
 }
 
 /**
  * POST /api/admin/centers/:id/invite-coach
  *
- * Sends an invite email to the head coach of the specified center.
- *
- * Validations:
- * - Center must exist
- * - Head coach must be assigned (422 if not)
- * - Head coach must have an email (422 if not)
- *
- * Requirements: 5.2, 5.4, 5.5
+ * Sends (or re-sends) a welcome invite email to the center owner.
+ * The recipient is always the center's contact_email.
+ * Creates a user account automatically if one doesn't exist yet.
  */
 export const inviteCoach = async (
   req: AuthRequest,
@@ -117,37 +108,32 @@ export const inviteCoach = async (
 ): Promise<void> => {
   try {
     const centerId = req.params.id as string;
-    const coach = await resolveHeadCoach(centerId, res);
+    const owner = await resolveCenterOwner(centerId, res);
+    if (!owner) return; // Response already sent
 
-    if (!coach) return; // Response already sent by helper
-
-    // Look up center name
+    // Get center name
     const centerResult = await query('SELECT name FROM centers WHERE id = $1', [centerId]);
     const centerName = centerResult.rows[0]?.name || 'your center';
 
-    // Generate password reset token so they can set their password
+    // Generate 24-hour password setup token
     const rawToken = generateResetToken();
     const tokenHash = hashToken(rawToken);
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-    // Invalidate existing tokens
-    await query('DELETE FROM password_reset_tokens WHERE user_id = $1', [coach.id]);
-
-    // Store hashed token
+    await query('DELETE FROM password_reset_tokens WHERE user_id = $1', [owner.id]);
     await query(
       'INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
-      [coach.id, tokenHash, expiresAt.toISOString()]
+      [owner.id, tokenHash, expiresAt.toISOString()]
     );
 
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
     const resetLink = `${frontendUrl}/reset-password?token=${rawToken}`;
     const loginUrl = `${frontendUrl}/login`;
 
-    // Send branded welcome email
     await sendCenterWelcomeEmail({
       centerName,
-      headCoachEmail: coach.email,
-      userName: coach.name || coach.email,
+      headCoachEmail: owner.email,
+      userName: owner.name || owner.email,
       resetLink,
       loginUrl,
       centerId,
@@ -155,7 +141,7 @@ export const inviteCoach = async (
 
     res.status(200).json({
       success: true,
-      message: `Invite email sent to ${coach.email}`,
+      message: `Invite email sent to ${owner.email}`,
     });
   } catch (error) {
     console.error('[ADMIN] inviteCoach error:', error);
@@ -166,15 +152,7 @@ export const inviteCoach = async (
 /**
  * POST /api/admin/centers/:id/reset-coach-password
  *
- * Generates a password reset token and sends a reset link email
- * to the head coach of the specified center.
- *
- * Validations:
- * - Center must exist
- * - Head coach must be assigned (422 if not)
- * - Head coach must have an email (422 if not)
- *
- * Requirements: 5.3, 5.4, 5.5
+ * Sends a password reset email to the center owner.
  */
 export const resetCoachPassword = async (
   req: AuthRequest,
@@ -182,37 +160,32 @@ export const resetCoachPassword = async (
 ): Promise<void> => {
   try {
     const centerId = req.params.id as string;
-    const coach = await resolveHeadCoach(centerId, res);
+    const owner = await resolveCenterOwner(centerId, res);
+    if (!owner) return;
 
-    if (!coach) return; // Response already sent by helper
+    await query('DELETE FROM password_reset_tokens WHERE user_id = $1', [owner.id]);
 
-    // Invalidate any existing reset tokens for this coach
-    await query('DELETE FROM password_reset_tokens WHERE user_id = $1', [coach.id]);
-
-    // Generate new token
     const rawToken = generateResetToken();
     const tokenHash = hashToken(rawToken);
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour from now
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
-    // Store hashed token
     await query(
       'INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
-      [coach.id, tokenHash, expiresAt.toISOString()]
+      [owner.id, tokenHash, expiresAt.toISOString()]
     );
 
-    // Send email with reset link
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
     const resetLink = `${frontendUrl}/reset-password?token=${rawToken}`;
 
     await sendPasswordResetEmail({
-      to: coach.email,
+      to: owner.email,
       resetLink,
-      userName: coach.name,
+      userName: owner.name,
     });
 
     res.status(200).json({
       success: true,
-      message: `Password reset email sent to ${coach.email}`,
+      message: `Password reset email sent to ${owner.email}`,
     });
   } catch (error) {
     console.error('[ADMIN] resetCoachPassword error:', error);
