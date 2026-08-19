@@ -27,15 +27,16 @@ export const createCourse = async (
       return;
     }
 
-    // Validate weeks
-    if (!Array.isArray(weeks) || weeks.length < 1 || weeks.length > 52) {
-      res.status(400).json({ error: 'Course must have between 1 and 52 weeks' });
+    // Validate weeks — allow empty array for inline creation from batch wizard
+    const weeksArray = Array.isArray(weeks) ? weeks : [];
+    if (weeksArray.length > 52) {
+      res.status(400).json({ error: 'Course must not exceed 52 weeks' });
       return;
     }
 
-    // Validate each week structure
-    for (let i = 0; i < weeks.length; i++) {
-      const week = weeks[i];
+    // Validate each week structure only when weeks are provided
+    for (let i = 0; i < weeksArray.length; i++) {
+      const week = weeksArray[i];
       if (!week.focusArea || !week.objective || !Array.isArray(week.drills)) {
         res.status(400).json({
           error: `Week ${i + 1} must have focusArea, objective, and drills array`,
@@ -45,7 +46,7 @@ export const createCourse = async (
     }
 
     // Re-number weeks sequentially starting from 1
-    const numberedWeeks = weeks.map((week: any, index: number) => ({
+    const numberedWeeks = weeksArray.map((week: any, index: number) => ({
       ...week,
       weekNumber: index + 1,
     }));
