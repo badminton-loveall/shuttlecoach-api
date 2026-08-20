@@ -138,7 +138,7 @@ export const createAssessment = async (
         student_id, cycle_key, recorded_by, scores, is_locked
       ) VALUES ($1, $2, $3, $4, $5)
       RETURNING id, student_id, cycle_key, recorded_by, recorded_at, scores, is_locked`,
-      [studentId, cycleKey, req.user.username, scores, isPastCycle(cycleKey)]
+      [studentId, cycleKey, req.user.username, JSON.stringify(scores), isPastCycle(cycleKey)]
     );
 
     const assessment = mapDatabaseRowToAssessment(result.rows[0]);
