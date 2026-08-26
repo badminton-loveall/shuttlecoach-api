@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { query } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
+import { TenantRequest } from '../middleware/tenantScope';
 import { SkillAssessment, SkillScores } from '../types';
 
 /**
@@ -76,7 +77,7 @@ function isPastCycle(cycleKey: string): boolean {
  * Rejects: Assessments for past cycles (returns 403)
  */
 export const createAssessment = async (
-  req: AuthRequest,
+  req: TenantRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -86,6 +87,7 @@ export const createAssessment = async (
     }
 
     const { studentId, cycleKey, scores } = req.body;
+    const centerId = req.tenantCenterId;
 
     // Validate required fields
     if (!studentId || !cycleKey || !scores) {
@@ -135,10 +137,10 @@ export const createAssessment = async (
     // Insert assessment
     const result = await query(
       `INSERT INTO skill_assessments (
-        student_id, cycle_key, recorded_by, scores, is_locked
-      ) VALUES ($1, $2, $3, $4, $5)
+        student_id, cycle_key, recorded_by, scores, is_locked, center_id
+      ) VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING id, student_id, cycle_key, recorded_by, recorded_at, scores, is_locked`,
-      [studentId, cycleKey, req.user.username, JSON.stringify(scores), isPastCycle(cycleKey)]
+      [studentId, cycleKey, req.user.username, JSON.stringify(scores), isPastCycle(cycleKey), centerId]
     );
 
     const assessment = mapDatabaseRowToAssessment(result.rows[0]);
