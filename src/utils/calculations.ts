@@ -48,6 +48,31 @@ export const getCurrentCycleKey = (): string => {
 };
 
 /**
+ * Generate the bi-monthly cycle key containing an arbitrary date (e.g., "Jan-Feb 2026")
+ */
+export const getCycleKeyForDate = (date: Date): string => {
+  const month = date.getMonth(); // 0-11
+  const year = date.getFullYear();
+
+  const cycles = [
+    'Jan-Feb',
+    'Jan-Feb',
+    'Mar-Apr',
+    'Mar-Apr',
+    'May-Jun',
+    'May-Jun',
+    'Jul-Aug',
+    'Jul-Aug',
+    'Sep-Oct',
+    'Sep-Oct',
+    'Nov-Dec',
+    'Nov-Dec',
+  ];
+
+  return `${cycles[month]} ${year}`;
+};
+
+/**
  * Check if a date is in the past
  */
 export const isPastDate = (date: Date): boolean => {

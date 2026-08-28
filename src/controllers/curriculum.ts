@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { query } from '../config/database';
 import { TenantRequest } from '../middleware/tenantScope';
 import { CurriculumPlan, WeekPlan, UserRole } from '../types';
+import { resyncDrillRecordsForPlan } from './studentEnrollments';
 
 /**
  * POST /api/curriculum
@@ -38,10 +39,10 @@ export const createCurriculumPlan = async (
       return;
     }
 
-    // Validate weeks array structure
-    if (!Array.isArray(weeks) || weeks.length !== 8) {
+    // Validate weeks array structure (1-52 weeks, matching course templates)
+    if (!Array.isArray(weeks) || weeks.length < 1 || weeks.length > 52) {
       res.status(400).json({
-        error: 'weeks must be an array of 8 week plans',
+        error: 'weeks must be an array of 1-52 week plans',
       });
       return;
     }
@@ -50,15 +51,13 @@ export const createCurriculumPlan = async (
     const isValidWeeks = weeks.every(
       (week: WeekPlan) =>
         week.weekNumber >= 1 &&
-        week.weekNumber <= 8 &&
-        week.focusArea &&
-        week.objective &&
+        week.weekNumber <= 52 &&
         Array.isArray(week.drills)
     );
 
     if (!isValidWeeks) {
       res.status(400).json({
-        error: 'Each week must have weekNumber (1-8), focusArea, objective, and drills array',
+        error: 'Each week must have a valid weekNumber (1-52) and a drills array',
       });
       return;
     }
@@ -396,6 +395,13 @@ export const updateCurriculumPlan = async (
     );
 
     const plan = mapDatabaseRowToCurriculumPlan(result.rows[0]);
+
+    // If this is a student-owned plan and the drills/weeks changed, re-sync the durable
+    // drill ledger's pending (not-yet-trained) records to match the new plan.
+    if (plan.studentId && req.body.weeks !== undefined) {
+      await resyncDrillRecordsForPlan(plan.studentId, plan.weeks, req.tenantCenterId || null);
+    }
+
     res.status(200).json(plan);
   } catch (error) {
     console.error('Update curriculum plan error:', error);

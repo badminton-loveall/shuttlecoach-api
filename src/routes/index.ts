@@ -24,6 +24,7 @@ import batchTimeTemplateRoutes from './batchTimeTemplates';
 import batchCoachAssignmentRoutes from './batchCoachAssignments';
 import batchStudentsDrillsRoutes from './batchStudentsDrills';
 import studentAssignmentRoutes from './studentAssignments';
+import studentEnrollmentRoutes from './studentEnrollments';
 import onboardingChecklistRoutes from './onboardingChecklist';
 import ledgerRoutes from './ledger';
 import salaryRoutes from './salary';
@@ -39,6 +40,10 @@ router.use('/auth', authRoutes);
 
 // Admin routes (ADMIN role only — auth + authorize applied internally by admin router)
 router.use('/admin', adminRoutes);
+
+// Per-student enrollment + drill-record routes (template/curriculum/coach/start-date/fee,
+// and the lifetime drill training ledger) — registered before /students to avoid conflicts
+router.use('/students/:studentId', studentEnrollmentRoutes);
 
 // Student routes
 router.use('/students', studentRoutes);
