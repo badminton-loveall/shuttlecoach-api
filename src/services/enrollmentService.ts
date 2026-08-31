@@ -112,6 +112,19 @@ export async function createEnrollment(params: CreateEnrollmentParams) {
   // record directly rather than joining through student_enrollments.
   await query(`UPDATE students SET assigned_coach_id = $1 WHERE id = $2`, [coachId, studentId]);
 
+  // Same for the legacy students.batch_id column — resolve it via the batches row linked to
+  // this timing template (if any) so "Academy Information" and the schedule calendar reflect
+  // the enrollment's actual template instead of whatever batch was last set directly.
+  let resolvedBatchId: string | null = null;
+  if (batchTimeTemplateId) {
+    const batchResult = await query(
+      `SELECT id FROM batches WHERE template_id = $1 AND is_archived = false LIMIT 1`,
+      [batchTimeTemplateId]
+    );
+    resolvedBatchId = batchResult.rows[0]?.id ?? null;
+  }
+  await query(`UPDATE students SET batch_id = $1 WHERE id = $2`, [resolvedBatchId, studentId]);
+
   if (curriculumId && weeks.length > 0) {
     const numberedWeeks = weeks.map((week, index) => ({ ...week, weekNumber: index + 1 }));
 
