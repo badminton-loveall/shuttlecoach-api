@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { query } from '../config/database';
 import { TenantRequest } from '../middleware/tenantScope';
 import { UserRole } from '../types';
+import { computeWeekSchedule } from '../services/enrollmentService';
 
 /**
  * GET /api/batch-students-drills
@@ -101,27 +102,23 @@ export const getBatchStudentsDrills = async (
 
     const students = studentsResult.rows;
 
-    // --- Compute week number from cycle_start_date ---
+    // --- Batch-level week number, used only as a fallback for students with no active
+    // enrollment of their own (e.g. legacy batch-level curriculum, never migrated to the
+    // per-student journey system). ---
+    let batchWeekNumber: number | null = null;
+
     const scheduleResult = await query(
       `SELECT cycle_start_date FROM session_schedules WHERE batch_id = $1`,
       [batchId]
     );
-
-    let weekNumber: number | null = null;
-
     if (scheduleResult.rows.length > 0 && scheduleResult.rows[0].cycle_start_date) {
       const cycleStartDate = new Date(scheduleResult.rows[0].cycle_start_date);
       const diffMs = targetDate.getTime() - cycleStartDate.getTime();
       const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-      // Compute week number (1-indexed), clamped to [1, 8]
       const computed = Math.floor(diffDays / 7) + 1;
-      weekNumber = Math.max(1, Math.min(8, computed));
+      batchWeekNumber = Math.max(1, Math.min(8, computed));
     }
-
-    // Fallback: if no session_schedule exists (template-based batches),
-    // derive week number from the batch's created_at date
-    if (weekNumber === null) {
+    if (batchWeekNumber === null) {
       const batchCreatedResult = await query(
         `SELECT created_at FROM batches WHERE id = $1`,
         [batchId]
@@ -132,7 +129,7 @@ export const getBatchStudentsDrills = async (
         const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
         if (diffDays >= 0) {
           const computed = Math.floor(diffDays / 7) + 1;
-          weekNumber = Math.max(1, Math.min(8, computed));
+          batchWeekNumber = Math.max(1, Math.min(8, computed));
         }
       }
     }
@@ -142,50 +139,77 @@ export const getBatchStudentsDrills = async (
       students.map(async (student: any) => {
         let drills: Array<{ name: string; focusArea: string }> = [];
 
-        if (weekNumber !== null) {
-          // Try individual student plan first
-          let planResult = await query(
-            `SELECT weeks FROM curriculum_plans
-             WHERE student_id = $1 AND is_archived = false
-             ORDER BY created_at DESC LIMIT 1`,
-            [student.id]
-          );
+        // Prefer this student's own active enrollment + curriculum plan, with week
+        // boundaries computed from their own enrollment start date — the same math used
+        // when their drill ledger was created — rather than any batch-wide date.
+        const enrollmentResult = await query(
+          `SELECT start_date FROM student_enrollments WHERE student_id = $1 AND status = 'active'`,
+          [student.id]
+        );
+        const planResultOwn = await query(
+          `SELECT weeks FROM curriculum_plans
+           WHERE student_id = $1 AND is_archived = false
+           ORDER BY created_at DESC LIMIT 1`,
+          [student.id]
+        );
 
-          // Fallback to batch-level plan
-          if (planResult.rows.length === 0) {
-            planResult = await query(
+        let weekNumber: number | null = null;
+        let weeks: any = null;
+
+        if (enrollmentResult.rows.length > 0 && planResultOwn.rows.length > 0) {
+          weeks = typeof planResultOwn.rows[0].weeks === 'string'
+            ? JSON.parse(planResultOwn.rows[0].weeks)
+            : planResultOwn.rows[0].weeks;
+
+          if (Array.isArray(weeks) && weeks.length > 0) {
+            const enrollmentStart = new Date(enrollmentResult.rows[0].start_date);
+            const schedule = computeWeekSchedule(enrollmentStart, weeks.length);
+            const dateStr = date;
+            const weekEntry = schedule.find(
+              (w) => dateStr >= w.scheduledStart && dateStr <= w.scheduledEnd
+            );
+            weekNumber = weekEntry?.weekNumber ?? null;
+          }
+        }
+
+        // Fall back to the legacy batch-level plan + batch-wide week number
+        if (weekNumber === null) {
+          weekNumber = batchWeekNumber;
+          weeks = null;
+
+          if (weekNumber !== null) {
+            let planResult = await query(
               `SELECT weeks FROM curriculum_plans
                WHERE batch_id = $1 AND student_id IS NULL AND is_archived = false
                ORDER BY created_at DESC LIMIT 1`,
               [batchId]
             );
-          }
 
-          // Fallback to the batch's linked course (curriculum_id → courses.weeks)
-          if (planResult.rows.length === 0) {
-            planResult = await query(
-              `SELECT c.weeks FROM courses c
-               INNER JOIN batches b ON b.curriculum_id = c.id
-               WHERE b.id = $1`,
-              [batchId]
-            );
-          }
-
-          if (planResult.rows.length > 0) {
-            const weeks = typeof planResult.rows[0].weeks === 'string'
-              ? JSON.parse(planResult.rows[0].weeks)
-              : planResult.rows[0].weeks;
-
-            if (Array.isArray(weeks) && weeks.length >= weekNumber) {
-              const weekData = weeks[weekNumber - 1];
-              if (weekData && Array.isArray(weekData.drills)) {
-                const focusArea = weekData.focusArea || '';
-                drills = weekData.drills.map((drill: any) => ({
-                  name: typeof drill === 'string' ? drill : drill.name || '',
-                  focusArea: drill.focusArea || drill.category || focusArea,
-                }));
-              }
+            if (planResult.rows.length === 0) {
+              planResult = await query(
+                `SELECT c.weeks FROM courses c
+                 INNER JOIN batches b ON b.curriculum_id = c.id
+                 WHERE b.id = $1`,
+                [batchId]
+              );
             }
+
+            if (planResult.rows.length > 0) {
+              weeks = typeof planResult.rows[0].weeks === 'string'
+                ? JSON.parse(planResult.rows[0].weeks)
+                : planResult.rows[0].weeks;
+            }
+          }
+        }
+
+        if (weekNumber !== null && Array.isArray(weeks) && weeks.length >= weekNumber) {
+          const weekData = weeks[weekNumber - 1];
+          if (weekData && Array.isArray(weekData.drills)) {
+            const focusArea = weekData.focusArea || '';
+            drills = weekData.drills.map((drill: any) => ({
+              name: typeof drill === 'string' ? drill : drill.name || '',
+              focusArea: drill.focusArea || drill.category || focusArea,
+            }));
           }
         }
 
