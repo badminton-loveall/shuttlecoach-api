@@ -194,7 +194,7 @@ export const listStudents = async (
       return;
     }
 
-    const { batch, coach, search, page = '1', limit = '20' } = req.query;
+    const { batch, coach, search, asOfDate, page = '1', limit = '20' } = req.query;
     const pageNum = parseInt(page as string, 10);
     const limitNum = parseInt(limit as string, 10);
     const offset = (pageNum - 1) * limitNum;
@@ -240,6 +240,20 @@ export const listStudents = async (
     if (search) {
       conditions.push(`(full_name ILIKE $${paramIndex} OR baid_number ILIKE $${paramIndex})`);
       params.push(`%${search}%`);
+      paramIndex++;
+    }
+
+    // asOfDate: only students whose active enrollment has actually started by this date —
+    // used by the dashboard's "Today's Attendance" widget so a student assigned to a batch
+    // whose training hasn't begun yet doesn't show up before their coverage starts.
+    if (asOfDate && typeof asOfDate === 'string') {
+      conditions.push(
+        `EXISTS (
+          SELECT 1 FROM student_enrollments e
+          WHERE e.student_id = students.id AND e.status = 'active' AND e.start_date <= $${paramIndex}
+        )`
+      );
+      params.push(asOfDate);
       paramIndex++;
     }
 
