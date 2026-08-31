@@ -1,4 +1,5 @@
 import { query } from '../config/database';
+import { computeWeekSchedule } from './enrollmentService';
 
 /**
  * Template-based session calendar generation.
@@ -41,13 +42,17 @@ const DAY_OF_WEEK_MAP: Record<string, number> = {
  * @param startDate - Start of date range (YYYY-MM-DD), defaults to 1st of current month
  * @param endDate - End of date range (YYYY-MM-DD), defaults to last day of current month
  * @param centerId - Tenant center ID for scoping
+ * @param studentId - When provided, drills/focus areas come from this student's own active
+ *   enrollment and curriculum plan (the per-student journey system) instead of the legacy
+ *   batch-owned curriculum plan, which no longer gets populated for any batch.
  * @returns Array of sessions sorted by date then start_time, or empty if no template assigned
  */
 export async function generateTemplateCalendarSessions(
   batchId: string,
   startDate?: string,
   endDate?: string,
-  centerId?: string
+  centerId?: string,
+  studentId?: string
 ): Promise<TemplateCalendarSession[]> {
   // 1. Look up the batch's template_id and name
   let batchResult;
@@ -90,14 +95,31 @@ export async function generateTemplateCalendarSessions(
   // 4. Determine date range (default: current month)
   const { start, end } = resolveDateRange(startDate, endDate);
 
-  // 5. Fetch curriculum plan weeks for this batch (latest non-archived batch-level plan)
-  const curriculumWeeks = await getCurriculumWeeksForBatch(batchId);
+  // 5. Fetch curriculum plan weeks — student-owned if we know which student, since curriculum
+  // plans are no longer batch-owned; otherwise fall back to the (now normally empty) legacy
+  // batch-level lookup for a coach viewing a batch with no specific student in context.
+  const curriculumWeeks = studentId
+    ? await getCurriculumWeeksForStudent(studentId)
+    : await getCurriculumWeeksForBatch(batchId);
 
-  // 6. Fetch session schedule for cycle start date (to compute week numbers)
-  // Fall back to the start of the requested date range if no schedule exists
-  let cycleStartDate = await getCycleStartDate(batchId);
-  if (!cycleStartDate && startDate) {
-    cycleStartDate = parseDate(typeof startDate === 'string' ? startDate : formatDate(start));
+  // 6. Determine week boundaries. For a student, use their own active enrollment's start date
+  // via the exact same week-schedule math used when the enrollment/drill ledger was created, so
+  // "week N" here always means the same date range as it does everywhere else. Otherwise fall
+  // back to the legacy batch-level cycle start date, or the requested range's start.
+  let weekSchedule: { weekNumber: number; scheduledStart: string; scheduledEnd: string }[] = [];
+  if (studentId && curriculumWeeks) {
+    const enrollmentStart = await getActiveEnrollmentStartDate(studentId);
+    if (enrollmentStart) {
+      weekSchedule = computeWeekSchedule(enrollmentStart, curriculumWeeks.length);
+    }
+  } else {
+    let cycleStartDate = await getCycleStartDate(batchId);
+    if (!cycleStartDate && startDate) {
+      cycleStartDate = parseDate(typeof startDate === 'string' ? startDate : formatDate(start));
+    }
+    if (cycleStartDate && curriculumWeeks) {
+      weekSchedule = computeWeekSchedule(cycleStartDate, curriculumWeeks.length);
+    }
   }
 
   // 7. For each slot, find all dates in [start, end] matching the slot's day_of_week
@@ -118,8 +140,11 @@ export async function generateTemplateCalendarSessions(
     const matchingDates = findDatesForDayOfWeek(start, end, targetDayNum);
 
     for (const date of matchingDates) {
-      // Compute week number from cycle start date
-      const weekNumber = computeWeekNumber(date, cycleStartDate);
+      const dateStr = formatDate(date);
+      const weekEntry = weekSchedule.find(
+        (w) => dateStr >= w.scheduledStart && dateStr <= w.scheduledEnd
+      );
+      const weekNumber = weekEntry?.weekNumber;
 
       // Get drills and focus area from curriculum plan for this week
       let focusArea: string | undefined;
@@ -242,29 +267,57 @@ async function getCycleStartDate(batchId: string): Promise<Date | null> {
 }
 
 /**
- * Compute the curriculum week number for a given date based on the cycle start date.
- * Returns null if no cycle start date is available or date is before cycle start.
- * Curriculum plans max out at 8 weeks.
+ * Fetch the curriculum plan weeks owned by a specific student (the per-student journey system).
+ * Returns the most recent non-archived plan for that student.
  */
-function computeWeekNumber(date: Date, cycleStartDate: Date | null): number | null {
-  if (!cycleStartDate) {
+async function getCurriculumWeeksForStudent(
+  studentId: string
+): Promise<Array<{ weekNumber: number; focusArea: string; drills: Array<{ name: string; category: string }> }> | null> {
+  const result = await query(
+    `SELECT weeks FROM curriculum_plans
+     WHERE student_id = $1 AND is_archived = false
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [studentId]
+  );
+
+  if (result.rows.length === 0) {
     return null;
   }
 
-  const diffMs = date.getTime() - cycleStartDate.getTime();
-  if (diffMs < 0) {
-    return null; // Date is before cycle start
-  }
+  const weeks = typeof result.rows[0].weeks === 'string'
+    ? JSON.parse(result.rows[0].weeks)
+    : result.rows[0].weeks;
 
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  const weekNumber = Math.floor(diffDays / 7) + 1;
+  return weeks.map((w: any) => ({
+    weekNumber: w.weekNumber,
+    focusArea: w.focusArea || '',
+    drills: (w.drills || []).map((d: any) => ({
+      name: d.name,
+      category: d.category,
+    })),
+  }));
+}
 
-  // Curriculum plans max out at 8 weeks
-  if (weekNumber < 1 || weekNumber > 8) {
+/**
+ * Get the start date of a student's currently active enrollment.
+ * Returns null if the student has no active enrollment.
+ */
+async function getActiveEnrollmentStartDate(studentId: string): Promise<Date | null> {
+  const result = await query(
+    `SELECT start_date FROM student_enrollments WHERE student_id = $1 AND status = 'active'`,
+    [studentId]
+  );
+
+  if (result.rows.length === 0) {
     return null;
   }
 
-  return weekNumber;
+  return parseDate(
+    typeof result.rows[0].start_date === 'string'
+      ? result.rows[0].start_date
+      : formatDate(new Date(result.rows[0].start_date))
+  );
 }
 
 /**

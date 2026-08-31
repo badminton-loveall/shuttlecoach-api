@@ -134,6 +134,10 @@ export const getSessionCalendarHandler = async (
 
     // Determine which batch(es) to query
     let targetBatchIds: string[] = [];
+    // Set only when the calendar is scoped to one specific student, so drills/focus areas can
+    // come from that student's own curriculum plan and enrollment rather than the (now
+    // normally empty) legacy batch-owned plan.
+    let targetStudentId: string | undefined;
 
     if (req.user.role === UserRole.STUDENT) {
       // Students can only view calendar for their own batch
@@ -156,6 +160,7 @@ export const getSessionCalendarHandler = async (
       const studentBatchId = studentResult.rows[0].batch_id;
       if (studentBatchId) {
         targetBatchIds = [studentBatchId];
+        targetStudentId = req.user.id;
       }
     } else if (batchId) {
       // Coach specified a batch — verify it belongs to the tenant
@@ -178,6 +183,7 @@ export const getSessionCalendarHandler = async (
       );
       if (studentResult.rows.length > 0 && studentResult.rows[0].batch_id) {
         targetBatchIds = [studentResult.rows[0].batch_id];
+        targetStudentId = studentId as string;
       }
     } else {
       // Coach with no filter — get batches based on role
@@ -246,7 +252,8 @@ export const getSessionCalendarHandler = async (
           bid,
           resolvedStartDate,
           resolvedEndDate,
-          req.tenantCenterId
+          req.tenantCenterId,
+          targetStudentId
         );
         allTemplateSessions.push(...sessions);
       } else {
