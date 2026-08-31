@@ -22,11 +22,32 @@ const drillSchema = z.object({
  * Validation schema for a week plan
  */
 const weekPlanSchema = z.object({
-  weekNumber: z.number().int().min(1).max(8),
+  weekNumber: z.number().int().min(1).max(52),
   focusArea: z.string().min(2, 'Focus area must be at least 2 characters').max(200),
   drills: z.array(drillSchema),
-  objective: z.string().min(2, 'Objective must be at least 2 characters').max(500),
+  // Purely descriptive in the UI (shown as a placeholder example, never marked required) —
+  // the controller's own validation never required it either, so it must stay optional here.
+  objective: z.string().max(500).optional(),
 });
+
+/**
+ * Shared refine for a weeks array: unique week numbers, each within the array's own bounds.
+ * Curricula can be 1-52 weeks (matching course templates), not a fixed length.
+ */
+function weeksArraySchema() {
+  return z
+    .array(weekPlanSchema)
+    .min(1, 'Curriculum must have at least 1 week')
+    .max(52, 'Curriculum must have at most 52 weeks')
+    .refine(
+      (weeks) => {
+        const weekNumbers = weeks.map((w) => w.weekNumber);
+        const uniqueWeeks = new Set(weekNumbers);
+        return uniqueWeeks.size === weeks.length && weekNumbers.every((n) => n >= 1 && n <= weeks.length);
+      },
+      { message: 'Weeks must have unique numbers from 1 to the number of weeks' }
+    );
+}
 
 /**
  * Validation schema for creating a curriculum plan
@@ -38,36 +59,14 @@ export const createCurriculumSchema = z.object({
   batchId: uuidString('batch ID').optional(),
   studentId: uuidString('student ID').optional(),
   sourceBatchPlanId: uuidString('source batch plan ID').optional(),
-  weeks: z
-    .array(weekPlanSchema)
-    .length(8, 'Curriculum must have exactly 8 weeks')
-    .refine(
-      (weeks) => {
-        // Ensure week numbers are 1-8 and unique
-        const weekNumbers = weeks.map((w) => w.weekNumber);
-        const uniqueWeeks = new Set(weekNumbers);
-        return uniqueWeeks.size === 8 && weekNumbers.every((n) => n >= 1 && n <= 8);
-      },
-      { message: 'Weeks must have unique numbers from 1 to 8' }
-    ),
+  weeks: weeksArraySchema(),
 });
 
 /**
  * Validation schema for updating a curriculum plan
  */
 export const updateCurriculumSchema = z.object({
-  weeks: z
-    .array(weekPlanSchema)
-    .length(8, 'Curriculum must have exactly 8 weeks')
-    .refine(
-      (weeks) => {
-        const weekNumbers = weeks.map((w) => w.weekNumber);
-        const uniqueWeeks = new Set(weekNumbers);
-        return uniqueWeeks.size === 8 && weekNumbers.every((n) => n >= 1 && n <= 8);
-      },
-      { message: 'Weeks must have unique numbers from 1 to 8' }
-    )
-    .optional(),
+  weeks: weeksArraySchema().optional(),
   isArchived: z.boolean().optional(),
 });
 
