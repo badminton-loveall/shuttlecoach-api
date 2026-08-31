@@ -9,6 +9,7 @@ import {
   markFeePaid,
   revertFeePaid,
   waiveFee,
+  generateMonthlyFeesManual,
 } from '../controllers/fees';
 import { UserRole } from '../types';
 import { validateRequest, validateQuery } from '../middleware/validation';
@@ -37,6 +38,19 @@ router.post(
   authorize(UserRole.HEAD_COACH),
   validateRequest(createFeeSchema),
   createFee
+);
+
+/**
+ * POST /api/fees/generate-monthly
+ * Generate this month's PENDING fee for every active enrollment in the center that doesn't
+ * already have one. The same generation also runs automatically every day via cron; this lets
+ * a coach trigger it on demand.
+ * Allowed roles: HEAD_COACH
+ */
+router.post(
+  '/generate-monthly',
+  authorize(UserRole.HEAD_COACH),
+  generateMonthlyFeesManual
 );
 
 /**

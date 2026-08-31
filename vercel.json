@@ -15,5 +15,11 @@
       "source": "/(.*)",
       "destination": "/api"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/generate-monthly-fees",
+      "schedule": "5 0 * * *"
+    }
   ]
 }

@@ -28,6 +28,7 @@ import studentEnrollmentRoutes from './studentEnrollments';
 import onboardingChecklistRoutes from './onboardingChecklist';
 import ledgerRoutes from './ledger';
 import salaryRoutes from './salary';
+import cronRoutes from './cron';
 import { getCenterInfo } from '../controllers/public/centers';
 
 const router = Router();
@@ -122,6 +123,9 @@ router.use('/ledger', ledgerRoutes);
 
 // Salary routes (salary generation, listing, pay/revert)
 router.use('/salary', salaryRoutes);
+
+// Cron-triggered routes (no user auth — secured via CRON_SECRET inside each controller)
+router.use('/cron', cronRoutes);
 
 // Public center info route (no auth)
 router.get('/centers/:slug/info', getCenterInfo);

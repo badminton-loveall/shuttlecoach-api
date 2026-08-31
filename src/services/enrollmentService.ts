@@ -1,6 +1,7 @@
 import { query } from '../config/database';
 import { getCycleKeyForDate } from '../utils/calculations';
 import { WeekPlan } from '../types';
+import { generateInitialFeeForEnrollment } from './billingService';
 
 export interface WeekSchedule {
   weekNumber: number;
@@ -167,6 +168,22 @@ export async function createEnrollment(params: CreateEnrollmentParams) {
         );
       }
     }
+  }
+
+  // The moment the enrollment carries a monthly fee and start date, generate the student's
+  // first fee record — prorated to sessions remaining in the starting month when a timing
+  // template is set. Never blocks enrollment on failure; fee generation is a side effect, not
+  // a precondition for the enrollment itself.
+  try {
+    await generateInitialFeeForEnrollment({
+      studentId,
+      monthlyFee,
+      startDate,
+      batchTimeTemplateId,
+      centerId,
+    });
+  } catch (err) {
+    console.error(`[createEnrollment] Failed to generate initial fee for student ${studentId}:`, err);
   }
 
   return enrollment;

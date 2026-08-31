@@ -3,6 +3,7 @@ import { query } from '../config/database';
 import { TenantRequest } from '../middleware/tenantScope';
 import { FeeRecord, FeeStatus, PaymentMethod, LedgerReferenceType } from '../types';
 import { createCreditEntry, createReversalEntry } from '../services/ledgerService';
+import { generateMonthlyFees } from '../services/billingService';
 
 /**
  * POST /api/fees
@@ -78,6 +79,29 @@ export const createFee = async (
     console.error('Create fee error:', error);
     res.status(500).json({
       error: 'An error occurred while creating fee record',
+    });
+  }
+};
+
+/**
+ * POST /api/fees/generate-monthly
+ * Generate PENDING fee records for the current month for every active enrollment in the
+ * center that doesn't already have one (mirrors POST /api/salary/generate). The same work
+ * also happens automatically every day via the cron-triggered endpoint — this manual trigger
+ * exists for a coach to run it on demand instead of waiting for the next cron tick.
+ * Requires: HEAD_COACH role
+ */
+export const generateMonthlyFeesManual = async (
+  req: TenantRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const result = await generateMonthlyFees(req.tenantCenterId || undefined);
+    res.status(200).json(result);
+  } catch (error) {
+    console.error('Generate monthly fees error:', error);
+    res.status(500).json({
+      error: 'An error occurred while generating monthly fee records',
     });
   }
 };
