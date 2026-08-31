@@ -8,7 +8,16 @@ export interface WeekSchedule {
   scheduledEnd: string; // YYYY-MM-DD
 }
 
-const toIsoDate = (d: Date): string => d.toISOString().slice(0, 10);
+// Local-component formatting, not toISOString() (UTC) — a Date built via new Date(y, m, d) or
+// .setDate() carries the calendar date in its LOCAL components; reading it back through UTC
+// shifts the displayed day by the server's UTC offset whenever local time isn't already UTC
+// (e.g. this differs on a developer's own machine vs. a server that happens to run UTC).
+const toIsoDate = (d: Date): string => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 /**
  * Compute a per-week calendar for a curriculum of `weekCount` weeks starting on `startDate`.
