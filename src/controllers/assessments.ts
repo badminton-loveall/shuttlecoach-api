@@ -2,7 +2,7 @@ import { Response } from 'express';
 import { query } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import { TenantRequest } from '../middleware/tenantScope';
-import { SkillAssessment, SkillScores } from '../types';
+import { SkillAssessment, SkillScores, UserRole } from '../types';
 
 /**
  * Helper function to get current cycle key
@@ -176,9 +176,12 @@ export const listAssessments = async (
     const params: any[] = [];
     let paramIndex = 1;
 
-    if (studentId) {
+    // STUDENT role: always scoped to their own assessments, regardless of query param
+    const effectiveStudentId = req.user.role === UserRole.STUDENT ? req.user.id : studentId;
+
+    if (effectiveStudentId) {
       conditions.push(`student_id = $${paramIndex}`);
-      params.push(studentId);
+      params.push(effectiveStudentId);
       paramIndex++;
     }
 
@@ -238,6 +241,13 @@ export const getAssessment = async (
     }
 
     const assessment = mapDatabaseRowToAssessment(result.rows[0]);
+
+    // STUDENT role: may only view their own assessments
+    if (req.user.role === UserRole.STUDENT && assessment.studentId !== req.user.id) {
+      res.status(403).json({ error: 'You do not have permission to access this assessment' });
+      return;
+    }
+
     res.status(200).json(assessment);
   } catch (error) {
     console.error('Get assessment error:', error);

@@ -408,6 +408,9 @@ export async function sendCoachWelcomeEmail({
 interface SendStudentWelcomeEmailParams {
   studentEmail: string;
   studentName: string;
+  studentUsername: string;
+  resetLink: string;
+  loginUrl: string;
   centerName: string;
   batchName?: string;
   centerContactInfo: string;
@@ -425,6 +428,9 @@ interface SendStudentWelcomeEmailParams {
  */
 export function renderStudentWelcomeEmailHtml({
   studentName,
+  studentUsername,
+  resetLink,
+  loginUrl,
   centerName,
   batchName,
   centerContactInfo,
@@ -432,6 +438,9 @@ export function renderStudentWelcomeEmailHtml({
   isMinor,
 }: {
   studentName: string;
+  studentUsername: string;
+  resetLink: string;
+  loginUrl: string;
   centerName: string;
   batchName?: string;
   centerContactInfo: string;
@@ -480,6 +489,31 @@ export function renderStudentWelcomeEmailHtml({
           </p>
         </div>
 ${batchSection}
+        <!-- Username -->
+        <div style="background-color: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 10px; padding: 24px; margin-bottom: 28px;">
+          <h2 style="font-size: 16px; font-weight: 600; color: #111827; margin: 0 0 8px 0;">👤 Your login</h2>
+          <p style="font-size: 14px; color: #6B7280; margin: 0 0 4px 0;">Use this to log in:</p>
+          <p style="font-size: 15px; font-weight: 600; color: #111827; margin: 0;">${studentUsername}</p>
+        </div>
+
+        <!-- Set Password CTA -->
+        <div style="background-color: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 10px; padding: 24px; margin-bottom: 28px;">
+          <h2 style="font-size: 16px; font-weight: 600; color: #111827; margin: 0 0 8px 0;">🔐 Set your password</h2>
+          <p style="font-size: 14px; color: #6B7280; margin: 0 0 16px 0;">Click below to create your password. This link expires in 24 hours.</p>
+          <a href="${resetLink}"
+             style="display: inline-block; background-color: #B8E135; color: #111827; font-size: 14px; font-weight: 600; padding: 12px 28px; text-decoration: none; border-radius: 8px; letter-spacing: 0.2px;">
+            Set Password →
+          </a>
+          <p style="font-size: 12px; color: #9CA3AF; margin: 12px 0 0 0; word-break: break-all;">${resetLink}</p>
+        </div>
+
+        <!-- Login URL -->
+        <div style="background-color: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 10px; padding: 24px; margin-bottom: 28px;">
+          <h2 style="font-size: 16px; font-weight: 600; color: #111827; margin: 0 0 8px 0;">🔗 Log in here</h2>
+          <p style="font-size: 14px; color: #6B7280; margin: 0 0 8px 0;">Once your password is set, log in here:</p>
+          <a href="${loginUrl}" style="font-size: 14px; color: #B8E135; font-weight: 500; text-decoration: none;">${loginUrl}</a>
+        </div>
+
         <!-- Contact Info -->
         <div style="background-color: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 10px; padding: 24px; margin-bottom: 28px;">
           <h2 style="font-size: 16px; font-weight: 600; color: #111827; margin: 0 0 8px 0;">📞 Center Contact</h2>
@@ -514,6 +548,9 @@ ${batchSection}
 export async function sendStudentWelcomeEmail({
   studentEmail,
   studentName,
+  studentUsername,
+  resetLink,
+  loginUrl,
   centerName,
   batchName,
   centerContactInfo,
@@ -531,6 +568,9 @@ export async function sendStudentWelcomeEmail({
 
   const html = renderStudentWelcomeEmailHtml({
     studentName,
+    studentUsername,
+    resetLink,
+    loginUrl,
     centerName,
     batchName,
     centerContactInfo,

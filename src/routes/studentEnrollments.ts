@@ -45,11 +45,12 @@ router.get(
 
 /**
  * GET /api/students/:studentId/drill-records
- * Allowed roles: HEAD_COACH, ASSISTANT_COACH
+ * Allowed roles: HEAD_COACH, ASSISTANT_COACH, STUDENT
+ * Note: STUDENT can only view their own drill records
  */
 router.get(
   '/drill-records',
-  authorize(UserRole.HEAD_COACH, UserRole.ASSISTANT_COACH),
+  authorize(UserRole.HEAD_COACH, UserRole.ASSISTANT_COACH, UserRole.STUDENT),
   listStudentDrillRecords
 );
 

@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { query } from '../config/database';
 import { TenantRequest } from '../middleware/tenantScope';
 import { createEnrollment, syncDrillRecordsForEnrollment } from '../services/enrollmentService';
+import { UserRole } from '../types';
 
 /**
  * POST /api/students/:studentId/enrollments
@@ -90,6 +91,12 @@ export const listStudentDrillRecords = async (
   try {
     const { studentId } = req.params;
     const { enrollmentId } = req.query;
+
+    // STUDENT role: may only view their own drill records
+    if (req.user?.role === UserRole.STUDENT && studentId !== req.user.id) {
+      res.status(403).json({ error: 'You do not have permission to access these drill records' });
+      return;
+    }
 
     const conditions = ['r.student_id = $1'];
     const params: any[] = [studentId];

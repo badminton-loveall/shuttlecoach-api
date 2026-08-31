@@ -65,6 +65,10 @@ export interface Student {
   archivedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
+  // Enrichment fields populated by GET /students/:id (joined from batches/users)
+  batchName?: string;
+  assignedCoachName?: string;
+  assignedCoachPhoto?: string;
 }
 
 // Skill Assessment Types

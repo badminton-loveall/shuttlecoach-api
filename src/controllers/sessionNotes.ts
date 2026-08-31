@@ -1,6 +1,8 @@
 import { Response } from 'express';
 import { TenantRequest } from '../middleware/tenantScope';
 import { ValidationError, createOrUpdateNote, getNotes } from '../services/sessionNotes';
+import { query } from '../config/database';
+import { UserRole } from '../types';
 
 /**
  * POST /api/session-notes
@@ -63,6 +65,16 @@ export const getSessionNotesHandler = async (
 
     const batchId = req.params.batchId as string;
     const { startDate, endDate } = req.query;
+
+    // STUDENT role: may only view notes for their own batch
+    if (req.user.role === UserRole.STUDENT) {
+      const studentResult = await query('SELECT batch_id FROM students WHERE id = $1', [req.user.id]);
+      const ownBatchId = studentResult.rows[0]?.batch_id;
+      if (!ownBatchId || ownBatchId !== batchId) {
+        res.status(403).json({ error: 'You do not have permission to access notes for this batch' });
+        return;
+      }
+    }
 
     const dateFilter: { startDate?: string; endDate?: string } = {};
     if (startDate) {

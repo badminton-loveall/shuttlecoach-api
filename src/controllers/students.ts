@@ -1,8 +1,11 @@
 import { Response } from 'express';
+import crypto from 'crypto';
 import { query } from '../config/database';
 import { TenantRequest } from '../middleware/tenantScope';
 import { Student, UserRole } from '../types';
 import { calculateAge } from '../utils/calculations';
+import { hashPassword } from '../utils/auth';
+import { generateResetToken, hashToken } from '../utils/tokenGenerator';
 import { sendStudentWelcomeEmail } from '../services/welcomeEmailService';
 import { autoCloneStudentPlan } from '../services/curriculumCloneService';
 
@@ -111,7 +114,8 @@ export const createStudent = async (
       });
     }
 
-    // Fire-and-forget: send student welcome email if email is provided
+    // Fire-and-forget: create a login account and send the student welcome email
+    // if an email address was provided.
     if (email && req.tenantCenterId) {
       setImmediate(async () => {
         try {
@@ -155,9 +159,62 @@ export const createStudent = async (
 
           const isMinor = age < 18;
 
+          // Create the student's login account. Its users.id is deliberately set to the
+          // SAME uuid as students.id — every STUDENT-scoped query elsewhere (attendance,
+          // fees, leave requests, session calendar) resolves "my own data" by treating
+          // req.user.id as the student_id directly, so the two ids must stay identical.
+          const existingUser = await query(
+            'SELECT id FROM users WHERE LOWER(email) = LOWER($1) OR LOWER(username) = LOWER($1)',
+            [email]
+          );
+
+          if (existingUser.rows.length > 0 && existingUser.rows[0].id !== student.id) {
+            console.warn(
+              `[CreateStudent] Email ${email} is already tied to a different user account (${existingUser.rows[0].id}). Skipping login creation for student ${student.id}.`
+            );
+            return;
+          }
+
+          if (existingUser.rows.length === 0) {
+            const randomPassword = crypto.randomBytes(16).toString('hex');
+            const passwordHash = await hashPassword(randomPassword);
+            await query(
+              `INSERT INTO users (id, username, password_hash, role, name, email, center_id, created_at, last_active)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+              [student.id, email, passwordHash, UserRole.STUDENT, fullName, email, req.tenantCenterId]
+            );
+          }
+
+          const studentUserId = student.id;
+
+          await query(
+            `INSERT INTO user_center_memberships (user_id, center_id, role)
+             VALUES ($1, $2, 'STUDENT')
+             ON CONFLICT (user_id, center_id, role) DO NOTHING`,
+            [studentUserId, req.tenantCenterId]
+          );
+
+          // Generate a 24-hour password-set token
+          const rawToken = generateResetToken();
+          const tokenHash = hashToken(rawToken);
+          const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+          await query('DELETE FROM password_reset_tokens WHERE user_id = $1', [studentUserId]);
+          await query(
+            'INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
+            [studentUserId, tokenHash, expiresAt.toISOString()]
+          );
+
+          const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+          const resetLink = `${frontendUrl}/reset-password?token=${rawToken}`;
+          const loginUrl = `${frontendUrl}/login`;
+
           sendStudentWelcomeEmail({
             studentEmail: email,
             studentName: fullName,
+            studentUsername: email,
+            resetLink,
+            loginUrl,
             centerName,
             batchName,
             centerContactInfo,
@@ -166,7 +223,7 @@ export const createStudent = async (
             centerId: req.tenantCenterId,
           });
         } catch (emailError) {
-          console.error(`[CreateStudent] Failed to send welcome email:`, emailError);
+          console.error(`[CreateStudent] Failed to create login account / send welcome email:`, emailError);
         }
       });
     }
@@ -315,24 +372,37 @@ export const getStudent = async (
 
     const { id } = req.params;
 
+    // Students may only fetch their own record (their users.id === students.id)
+    if (req.user.role === UserRole.STUDENT && id !== req.user.id) {
+      res.status(403).json({
+        error: 'You do not have permission to access this student',
+      });
+      return;
+    }
+
     // Build WHERE clause with tenant scoping
-    const conditions: string[] = ['id = $1'];
+    const conditions: string[] = ['s.id = $1'];
     const params: any[] = [id];
 
     if (req.tenantCenterId) {
-      conditions.push('center_id = $2');
+      conditions.push('s.center_id = $2');
       params.push(req.tenantCenterId);
     }
 
-    // Fetch student
+    // Fetch student, enriched with batch name and assigned coach details
     const result = await query(
-      `SELECT 
-        id, full_name, date_of_birth, age, gender, contact_phone, email,
-        guardian_name, guardian_phone, baid_number, batch_id, assigned_coach_id,
-        profile_photo, height, weight, bmi, blood_group, medical_conditions,
-        emergency_contact, strengths, weaknesses, coach_feedback, skill_level,
-        created_at, updated_at
-      FROM students
+      `SELECT
+        s.id, s.full_name, s.date_of_birth, s.age, s.gender, s.contact_phone, s.email,
+        s.guardian_name, s.guardian_phone, s.baid_number, s.batch_id, s.assigned_coach_id,
+        s.profile_photo, s.height, s.weight, s.bmi, s.blood_group, s.medical_conditions,
+        s.emergency_contact, s.strengths, s.weaknesses, s.coach_feedback, s.skill_level,
+        s.created_at, s.updated_at,
+        b.name AS batch_name,
+        c.name AS assigned_coach_name,
+        c.profile_photo AS assigned_coach_photo
+      FROM students s
+      LEFT JOIN batches b ON b.id = s.batch_id
+      LEFT JOIN users c ON c.id = s.assigned_coach_id
       WHERE ${conditions.join(' AND ')}`,
       params
     );
@@ -551,5 +621,8 @@ function mapDatabaseRowToStudent(row: any): Student {
     updatedAt: row.updated_at,
     status: row.status,
     archivedAt: row.archived_at,
+    ...(row.batch_name !== undefined && { batchName: row.batch_name }),
+    ...(row.assigned_coach_name !== undefined && { assignedCoachName: row.assigned_coach_name }),
+    ...(row.assigned_coach_photo !== undefined && { assignedCoachPhoto: row.assigned_coach_photo }),
   };
 }

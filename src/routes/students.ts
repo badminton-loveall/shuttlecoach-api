@@ -52,12 +52,12 @@ router.get(
 /**
  * GET /api/students/:id
  * Fetch a single student by ID
- * Allowed roles: HEAD_COACH, ASSISTANT_COACH
- * Note: ASSISTANT_COACH can only access assigned students
+ * Allowed roles: HEAD_COACH, ASSISTANT_COACH, STUDENT
+ * Note: ASSISTANT_COACH can only access assigned students; STUDENT can only access themselves
  */
 router.get(
   '/:id',
-  authorize(UserRole.HEAD_COACH, UserRole.ASSISTANT_COACH),
+  authorize(UserRole.HEAD_COACH, UserRole.ASSISTANT_COACH, UserRole.STUDENT),
   getStudent
 );
 
