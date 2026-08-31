@@ -107,6 +107,11 @@ export async function createEnrollment(params: CreateEnrollmentParams) {
 
   const enrollment = enrollmentResult.rows[0];
 
+  // Keep the legacy students.assigned_coach_id column in sync with the now-active enrollment —
+  // StudentListTable, CoachListTable, and the coach filter dropdown all still read the student
+  // record directly rather than joining through student_enrollments.
+  await query(`UPDATE students SET assigned_coach_id = $1 WHERE id = $2`, [coachId, studentId]);
+
   if (curriculumId && weeks.length > 0) {
     const numberedWeeks = weeks.map((week, index) => ({ ...week, weekNumber: index + 1 }));
 
