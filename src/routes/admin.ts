@@ -23,6 +23,16 @@ import {
   updateDrillSchema,
   adminListDrillsQuerySchema,
 } from '../validators/drill.schemas';
+import {
+  listSetsForReview,
+  getSetForReview,
+  approveSet,
+  rejectSet,
+} from '../controllers/admin/drillSets';
+import {
+  adminSetQuerySchema,
+  rejectSetSchema,
+} from '../validators/drillSet.schemas';
 
 const router = Router();
 
@@ -113,5 +123,29 @@ router.patch('/drills/:id', validateRequest(updateDrillSchema), updateGlobalDril
  * Archive a global drill (soft-delete)
  */
 router.delete('/drills/:id', archiveGlobalDrill);
+
+/**
+ * GET /api/admin/drill-sets
+ * Review queue: list coach-submitted drill sets (default: pending_review)
+ */
+router.get('/drill-sets', validateQuery(adminSetQuerySchema), listSetsForReview);
+
+/**
+ * GET /api/admin/drill-sets/:id
+ * Full nested detail (categories + drills) for review
+ */
+router.get('/drill-sets/:id', getSetForReview);
+
+/**
+ * POST /api/admin/drill-sets/:id/approve
+ * pending_review -> published
+ */
+router.post('/drill-sets/:id/approve', approveSet);
+
+/**
+ * POST /api/admin/drill-sets/:id/reject
+ * pending_review -> rejected (+ optional reason)
+ */
+router.post('/drill-sets/:id/reject', validateRequest(rejectSetSchema), rejectSet);
 
 export default router;

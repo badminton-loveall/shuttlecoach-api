@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authenticate, authorize } from '../middleware/auth';
 import { centerActive } from '../middleware/centerActive';
 import { tenantScope } from '../middleware/tenantScope';
+import { requireMarketplaceEnabled } from '../middleware/marketplaceEnabled';
 import { createDrill, listDrills, updateDrill, archiveDrill, listMarketplaceDrills, adoptDrill, adoptAllDrills } from '../controllers/drills';
 import { UserRole } from '../types';
 import { validateRequest, validateQuery } from '../middleware/validation';
@@ -46,6 +47,7 @@ router.post(
 router.get(
   '/marketplace',
   authorize(UserRole.HEAD_COACH, UserRole.ASSISTANT_COACH),
+  requireMarketplaceEnabled,
   validateQuery(marketplaceQuerySchema),
   listMarketplaceDrills
 );
@@ -58,6 +60,7 @@ router.get(
 router.post(
   '/adopt',
   authorize(UserRole.HEAD_COACH),
+  requireMarketplaceEnabled,
   validateRequest(adoptDrillSchema),
   adoptDrill
 );
@@ -70,6 +73,7 @@ router.post(
 router.post(
   '/adopt-all',
   authorize(UserRole.HEAD_COACH),
+  requireMarketplaceEnabled,
   adoptAllDrills
 );
 

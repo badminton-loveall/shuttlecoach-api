@@ -18,6 +18,7 @@ export interface Center {
   planType?: string;
   subscriptionExpiresAt?: Date;
   sport: Sport | null;
+  marketplaceEnabled: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -689,4 +690,83 @@ export interface AdoptDrillResponse {
   category: string;
   sport: Sport;
   sourceDrillId: string;
+}
+
+// ============================================================================
+// Drill Set Marketplace Types
+// ============================================================================
+
+export type SetStatus = 'draft' | 'pending_review' | 'published' | 'rejected';
+
+export const SET_STATUSES: SetStatus[] = ['draft', 'pending_review', 'published', 'rejected'];
+
+export interface DrillSetCategory {
+  id: string;
+  setId: string;
+  name: string;
+  sortOrder: number;
+  createdAt: Date;
+  updatedAt: Date;
+  drills?: Drill[];
+}
+
+export interface DrillSet {
+  id: string;
+  name: string;
+  description: string | null;
+  sport: Sport | null;
+  centerId: string;
+  createdBy: string;
+  status: SetStatus;
+  submittedAt: Date | null;
+  reviewedBy: string | null;
+  reviewedAt: Date | null;
+  rejectionReason: string | null;
+  sourceSetId: string | null;
+  isArchived: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  drillCount?: number;
+  categories?: DrillSetCategory[];
+}
+
+export interface CreateDrillSetRequest {
+  name: string;
+  description?: string;
+  sport?: Sport;
+}
+
+export interface UpdateDrillSetRequest {
+  name?: string;
+  description?: string;
+  sport?: Sport;
+}
+
+export interface CreateSetCategoryRequest {
+  name: string;
+}
+
+export interface UpdateSetCategoryRequest {
+  name: string;
+}
+
+export interface AddDrillToSetCategoryRequest {
+  drillId: string;
+}
+
+export interface RejectSetRequest {
+  reason?: string;
+}
+
+export interface AdoptSetRequest {
+  setId: string;
+}
+
+export interface SetMarketplaceQuery {
+  sport?: Sport;
+  search?: string;
+}
+
+export interface AdminSetQuery {
+  status?: SetStatus;
 }

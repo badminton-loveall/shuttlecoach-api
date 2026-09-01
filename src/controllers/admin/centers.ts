@@ -19,7 +19,7 @@ export const listCenters = async (
       `SELECT
         id, name, location, contact_phone, contact_email, logo_url,
         is_active, head_coach_id, plan_type, subscription_expires_at,
-        sport, created_at, updated_at
+        sport, marketplace_enabled, created_at, updated_at
        FROM centers
        ORDER BY created_at DESC`
     );
@@ -36,6 +36,7 @@ export const listCenters = async (
       planType: row.plan_type,
       subscriptionExpiresAt: row.subscription_expires_at,
       sport: row.sport,
+      marketplaceEnabled: row.marketplace_enabled,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     }));
@@ -83,7 +84,7 @@ export const createCenter = async (
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING id, name, location, contact_phone, contact_email, logo_url,
                  is_active, head_coach_id, plan_type, subscription_expires_at,
-                 slug, sport, created_at, updated_at`,
+                 slug, sport, marketplace_enabled, created_at, updated_at`,
       [
         name,
         location || null,
@@ -190,6 +191,7 @@ export const createCenter = async (
       planType: center.plan_type,
       subscriptionExpiresAt: center.subscription_expires_at,
       sport: center.sport,
+      marketplaceEnabled: center.marketplace_enabled,
       createdAt: center.created_at,
       updatedAt: center.updated_at,
     });
@@ -220,6 +222,7 @@ export const updateCenter = async (
       subscriptionExpiresAt: 'subscription_expires_at',
       slug: 'slug',
       sport: 'sport',
+      marketplaceEnabled: 'marketplace_enabled',
     };
 
     const setClauses: string[] = [];
@@ -279,7 +282,7 @@ export const updateCenter = async (
       `UPDATE centers SET ${setClauses.join(', ')} WHERE id = ${idParam}
        RETURNING id, name, location, contact_phone, contact_email, logo_url,
                  is_active, head_coach_id, plan_type, subscription_expires_at,
-                 slug, sport, created_at, updated_at`,
+                 slug, sport, marketplace_enabled, created_at, updated_at`,
       values
     );
 
@@ -303,6 +306,7 @@ export const updateCenter = async (
       subscriptionExpiresAt: center.subscription_expires_at,
       slug: center.slug,
       sport: center.sport,
+      marketplaceEnabled: center.marketplace_enabled,
       createdAt: center.created_at,
       updatedAt: center.updated_at,
     });

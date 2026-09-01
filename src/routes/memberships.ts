@@ -37,7 +37,8 @@ router.get('/my-center', async (req: AuthRequest, res: Response): Promise<void> 
 
     const result = await query(
       `SELECT id, name, slug, location, contact_phone, contact_email, logo_url,
-              is_active, plan_type, subscription_expires_at, created_at, updated_at
+              is_active, plan_type, subscription_expires_at, sport, marketplace_enabled,
+              created_at, updated_at
        FROM centers WHERE id = $1`,
       [centerId]
     );
@@ -59,6 +60,8 @@ router.get('/my-center', async (req: AuthRequest, res: Response): Promise<void> 
       isActive: c.is_active,
       planType: c.plan_type || 'basic',
       subscriptionExpiresAt: c.subscription_expires_at,
+      sport: c.sport,
+      marketplaceEnabled: c.marketplace_enabled,
       createdAt: c.created_at,
       updatedAt: c.updated_at,
     });

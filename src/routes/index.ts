@@ -10,6 +10,7 @@ import courseRoutes from './courses';
 import trainingLogRoutes from './trainingLogs';
 import coachRoutes from './coaches';
 import drillRoutes from './drills';
+import drillSetRoutes from './drillSets';
 import batchRoutes from './batches';
 import skillScoresRoutes from './skillScores';
 import sessionScheduleRoutes from './sessionSchedules';
@@ -69,6 +70,9 @@ router.use('/coaches', coachRoutes);
 
 // Drill management routes
 router.use('/drills', drillRoutes);
+
+// Drill set routes (coach-authored sets of categorized drills + marketplace)
+router.use('/drill-sets', drillSetRoutes);
 
 // Student assignment routes (nested under batches — registered before /batches to avoid conflicts)
 router.use('/batches/:batchId/students', studentAssignmentRoutes);
