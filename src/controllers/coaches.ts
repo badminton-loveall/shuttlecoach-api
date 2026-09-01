@@ -6,7 +6,7 @@ import { generateResetToken, hashToken } from '../utils/tokenGenerator';
 import { sendCoachWelcomeEmail } from '../services/welcomeEmailService';
 import { UserRole } from '../types';
 import { TenantRequest } from '../middleware/tenantScope';
-import { createMembership } from '../services/membershipService';
+import { createMembership, getMembership } from '../services/membershipService';
 
 /**
  * Validates whether a string is a valid UUID v4 format.
@@ -44,13 +44,53 @@ export const createCoach = async (
 
     // Check if username already exists
     const existingUser = await query(
-      'SELECT id FROM users WHERE LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($1)',
+      'SELECT id, name, username, role, email, profile_photo, specialization, senior_coach_id, phone, date_of_birth, address, qualification, experience_years, bank_details, monthly_salary, created_at, last_active FROM users WHERE LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($1)',
       [username]
     );
 
+    // The email already belongs to someone — a person can hold a coach role at more than
+    // one center (e.g. a coach who also helps out at a second academy), so rather than
+    // rejecting outright, grant their existing account a membership at this center instead
+    // of creating a duplicate users row. Their shared profile (name, specialization, salary,
+    // etc.) stays whatever it already was — this only adds access, it never overwrites it.
     if (existingUser.rows.length > 0) {
-      res.status(400).json({
-        error: 'A user with this email already exists',
+      const existing = existingUser.rows[0];
+
+      if (!req.tenantCenterId) {
+        res.status(400).json({ error: 'A user with this email already exists' });
+        return;
+      }
+
+      const alreadyMember = await getMembership(existing.id, req.tenantCenterId);
+      if (alreadyMember) {
+        res.status(400).json({
+          error: 'This user is already a coach at this center',
+        });
+        return;
+      }
+
+      await createMembership(existing.id, req.tenantCenterId, UserRole.ASSISTANT_COACH);
+
+      res.status(201).json({
+        id: existing.id,
+        username: existing.username,
+        role: UserRole.ASSISTANT_COACH,
+        name: existing.name,
+        email: existing.email,
+        profilePhoto: existing.profile_photo,
+        specialization: existing.specialization,
+        centerId: req.tenantCenterId,
+        seniorCoachId: existing.senior_coach_id || null,
+        phone: existing.phone || null,
+        dateOfBirth: existing.date_of_birth || null,
+        address: existing.address || null,
+        qualification: existing.qualification || null,
+        experienceYears: existing.experience_years ?? null,
+        bankDetails: existing.bank_details || null,
+        monthlySalary: existing.monthly_salary != null ? parseFloat(existing.monthly_salary) : null,
+        createdAt: existing.created_at,
+        lastActive: existing.last_active,
+        grantedExistingAccount: true,
       });
       return;
     }
@@ -256,21 +296,21 @@ export const updateCoach = async (
       return;
     }
 
-    params.push(id);
-
-    // Build WHERE clause with tenant scoping
-    const whereConditions = [`id = $${paramIndex}`];
-    paramIndex++;
-
+    // Verify the target has a coach membership at this center — not users.center_id, which
+    // only reflects one "home" center for someone who coaches at more than one.
     if (req.tenantCenterId) {
-      whereConditions.push(`center_id = $${paramIndex}`);
-      params.push(req.tenantCenterId);
-      paramIndex++;
+      const membership = await getMembership(String(id), req.tenantCenterId);
+      if (!membership || (membership.role !== UserRole.HEAD_COACH && membership.role !== UserRole.ASSISTANT_COACH)) {
+        res.status(404).json({ error: 'Coach not found' });
+        return;
+      }
     }
+
+    params.push(id);
 
     const result = await query(
       `UPDATE users SET ${updates.join(', ')}
-       WHERE ${whereConditions.join(' AND ')}
+       WHERE id = $${paramIndex}
        RETURNING id, username, role, name, email, profile_photo, specialization, senior_coach_id, phone, date_of_birth, address, qualification, experience_years, bank_details, monthly_salary, created_at, last_active`,
       params
     );
@@ -329,13 +369,16 @@ export const getCoach = async (
       }
     }
 
-    // Query coach by ID scoped to the requesting user's center
+    // Query coach by ID, scoped to a coach membership at the requesting user's center — not
+    // users.center_id, which only reflects one "home" center for someone who coaches at more
+    // than one.
     const result = await query(
-      `SELECT id, username, role, name, email, profile_photo, specialization, senior_coach_id,
-              phone, date_of_birth, address, qualification, experience_years, bank_details, monthly_salary,
-              created_at, last_active
-       FROM users
-       WHERE id = $1 AND center_id = $2 AND role IN ('HEAD_COACH', 'ASSISTANT_COACH')`,
+      `SELECT u.id, u.username, ucm.role, u.name, u.email, u.profile_photo, u.specialization, u.senior_coach_id,
+              u.phone, u.date_of_birth, u.address, u.qualification, u.experience_years, u.bank_details, u.monthly_salary,
+              u.created_at, u.last_active
+       FROM users u
+       JOIN user_center_memberships ucm ON ucm.user_id = u.id
+       WHERE u.id = $1 AND ucm.center_id = $2 AND ucm.role IN ('HEAD_COACH', 'ASSISTANT_COACH')`,
       [id, req.tenantCenterId]
     );
 
@@ -381,13 +424,15 @@ export const listCoaches = async (
   res: Response
 ): Promise<void> => {
   try {
-    // Build WHERE clause with tenant scoping
-    const conditions: string[] = ["u.role IN ('HEAD_COACH', 'ASSISTANT_COACH')"];
+    // A coach "belongs" to this center if they hold a coach membership here — not merely if
+    // users.center_id (their legacy single "home" center) happens to match, since a person
+    // can coach at more than one center via a second user_center_memberships row.
+    const conditions: string[] = ["ucm.role IN ('HEAD_COACH', 'ASSISTANT_COACH')"];
     const params: any[] = [];
     let paramIndex = 1;
 
     if (req.tenantCenterId) {
-      conditions.push(`u.center_id = $${paramIndex}`);
+      conditions.push(`ucm.center_id = $${paramIndex}`);
       params.push(req.tenantCenterId);
       paramIndex++;
     }
@@ -396,10 +441,10 @@ export const listCoaches = async (
 
     // Fetch all coaches (HEAD_COACH and ASSISTANT_COACH) with assignment counts
     const result = await query(
-      `SELECT 
+      `SELECT
         u.id,
         u.username,
-        u.role,
+        ucm.role,
         u.name,
         u.email,
         u.profile_photo,
@@ -410,9 +455,10 @@ export const listCoaches = async (
         COUNT(DISTINCT s.id) as assigned_student_count,
         COUNT(DISTINCT s.batch_id) as assigned_batch_count
        FROM users u
+       JOIN user_center_memberships ucm ON ucm.user_id = u.id
        LEFT JOIN students s ON s.assigned_coach_id = u.id
        ${whereClause}
-       GROUP BY u.id, u.username, u.role, u.name, u.email, u.profile_photo, u.specialization, u.can_access_fees, u.created_at, u.last_active
+       GROUP BY u.id, u.username, ucm.role, u.name, u.email, u.profile_photo, u.specialization, u.can_access_fees, u.created_at, u.last_active
        ORDER BY u.name ASC`,
       params
     );
@@ -462,7 +508,7 @@ export const toggleFeeAccess = async (
 
     // Verify target user exists
     const targetResult = await query(
-      'SELECT id, role, center_id FROM users WHERE id = $1',
+      'SELECT id FROM users WHERE id = $1',
       [targetCoachId]
     );
 
@@ -471,16 +517,18 @@ export const toggleFeeAccess = async (
       return;
     }
 
-    const target = targetResult.rows[0];
-
-    // Verify target is in the same center
-    if (target.center_id !== req.tenantCenterId) {
+    // Verify target has a coach membership at this center — not users.center_id, which only
+    // reflects one "home" center for someone who coaches at more than one.
+    if (!req.tenantCenterId) {
       res.status(403).json({ error: 'Cannot modify coaches outside your center' });
       return;
     }
-
-    // Verify target is HEAD_COACH or ASSISTANT_COACH
-    if (target.role !== UserRole.ASSISTANT_COACH && target.role !== UserRole.HEAD_COACH) {
+    const membership = await getMembership(String(targetCoachId), req.tenantCenterId);
+    if (!membership) {
+      res.status(403).json({ error: 'Cannot modify coaches outside your center' });
+      return;
+    }
+    if (membership.role !== UserRole.ASSISTANT_COACH && membership.role !== UserRole.HEAD_COACH) {
       res.status(400).json({ error: 'Fee access can only be toggled for coaches' });
       return;
     }
@@ -531,19 +579,10 @@ export const assignCoach = async (
       return;
     }
 
-    // Verify coach exists and is an assistant coach (with tenant scoping)
-    const coachConditions = ['id = $1'];
-    const coachParams: any[] = [coachId];
-
-    if (req.tenantCenterId) {
-      coachConditions.push('center_id = $2');
-      coachParams.push(req.tenantCenterId);
-    }
-
-    const coachResult = await query(
-      `SELECT id, role FROM users WHERE ${coachConditions.join(' AND ')}`,
-      coachParams
-    );
+    // Verify coach exists and has an assistant-coach membership at this center — not
+    // users.center_id, which only reflects one "home" center for someone who coaches at
+    // more than one. Falls back to the legacy users.role when unscoped (ADMIN).
+    const coachResult = await query('SELECT id, role FROM users WHERE id = $1', [coachId]);
 
     if (coachResult.rows.length === 0) {
       res.status(404).json({
@@ -552,7 +591,19 @@ export const assignCoach = async (
       return;
     }
 
-    if (coachResult.rows[0].role !== UserRole.ASSISTANT_COACH) {
+    let coachRoleAtCenter: string = coachResult.rows[0].role;
+    if (req.tenantCenterId) {
+      const membership = await getMembership(String(coachId), req.tenantCenterId);
+      if (!membership) {
+        res.status(404).json({
+          error: 'Coach not found',
+        });
+        return;
+      }
+      coachRoleAtCenter = membership.role;
+    }
+
+    if (coachRoleAtCenter !== UserRole.ASSISTANT_COACH) {
       res.status(400).json({
         error: 'Can only assign assistant coaches',
       });

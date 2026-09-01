@@ -3,6 +3,7 @@ import { query } from '../config/database';
 import { TenantRequest } from '../middleware/tenantScope';
 import { LedgerReferenceType } from '../types';
 import { createDebitEntry, createReversalEntry, SalaryRecordForLedger } from '../services/ledgerService';
+import { validateMembership } from '../services/membershipService';
 
 /**
  * POST /api/salary/generate
@@ -23,9 +24,14 @@ export const generateSalary = async (
 
     const centerId = req.tenantCenterId;
 
-    // Query all coaches in the center with non-null monthly_salary
+    // Query all coaches with a coach membership at this center and non-null monthly_salary —
+    // via user_center_memberships, not users.center_id, since that only reflects one "home"
+    // center for someone who coaches at more than one.
     const coachesResult = await query(
-      `SELECT id, monthly_salary FROM users WHERE center_id = $1 AND role IN ('HEAD_COACH', 'ASSISTANT_COACH') AND monthly_salary IS NOT NULL`,
+      `SELECT DISTINCT u.id, u.monthly_salary
+       FROM users u
+       JOIN user_center_memberships ucm ON ucm.user_id = u.id
+       WHERE ucm.center_id = $1 AND ucm.role IN ('HEAD_COACH', 'ASSISTANT_COACH') AND u.monthly_salary IS NOT NULL`,
       [centerId]
     );
 
@@ -104,13 +110,9 @@ export const getCoachSalary = async (
     const period = req.query.period as string | undefined;
     const centerId = req.tenantCenterId;
 
-    // Verify coach belongs to the requesting user's center
-    const coachResult = await query(
-      `SELECT id FROM users WHERE id = $1 AND center_id = $2`,
-      [coachId, centerId]
-    );
-
-    if (coachResult.rows.length === 0) {
+    // Verify coach has a membership at the requesting user's center — not users.center_id,
+    // which only reflects one "home" center for someone who coaches at more than one.
+    if (!centerId || !(await validateMembership(String(coachId), centerId))) {
       res.status(404).json({ error: 'Coach not found' });
       return;
     }
