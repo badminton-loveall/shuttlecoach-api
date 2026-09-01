@@ -6,6 +6,7 @@ import { generateResetToken, hashToken } from '../utils/tokenGenerator';
 import { sendCoachWelcomeEmail } from '../services/welcomeEmailService';
 import { UserRole } from '../types';
 import { TenantRequest } from '../middleware/tenantScope';
+import { createMembership } from '../services/membershipService';
 
 /**
  * Validates whether a string is a valid UUID v4 format.
@@ -109,6 +110,11 @@ export const createCoach = async (
     );
 
     const coach = result.rows[0];
+
+    // Without a membership row, login's non-ADMIN flow finds zero memberships and rejects
+    // this coach with "User not associated with a center" forever — this must succeed for
+    // the account to ever be usable, so it's awaited here rather than fired-and-forgotten.
+    await createMembership(coach.id, req.tenantCenterId!, assignedRole);
 
     res.status(201).json({
       id: coach.id,
