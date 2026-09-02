@@ -20,6 +20,7 @@ import {
   listMarketplaceSets,
   getMarketplaceSetDetail,
   adoptSet,
+  toggleSetEnabled,
 } from '../controllers/drillSets';
 import {
   createDrillSetSchema,
@@ -30,6 +31,7 @@ import {
   adoptSetSchema,
   listOwnSetsQuerySchema,
   setMarketplaceQuerySchema,
+  toggleSetEnabledSchema,
 } from '../validators/drillSet.schemas';
 
 const router = Router();
@@ -97,6 +99,17 @@ router.patch('/:id', authorize(...COACH_ROLES), validateRequest(updateDrillSetSc
  * Archive a draft/rejected set.
  */
 router.delete('/:id', authorize(...COACH_ROLES), deleteSet);
+
+/**
+ * PATCH /api/drill-sets/:id/enabled
+ * Enable/disable a set the center owns or has adopted, in any status.
+ */
+router.patch(
+  '/:id/enabled',
+  authorize(UserRole.HEAD_COACH),
+  validateRequest(toggleSetEnabledSchema),
+  toggleSetEnabled
+);
 
 /**
  * POST /api/drill-sets/:id/categories

@@ -45,8 +45,12 @@ export const setMarketplaceQuerySchema = z.object({
 });
 
 export const adminSetQuerySchema = z.object({
-  status: setStatusSchema.optional(),
+  status: z.union([setStatusSchema, z.literal('all')]).optional(),
 });
+
+export const toggleSetEnabledSchema = z.object({
+  enabled: z.boolean(),
+}).strict();
 
 export type CreateDrillSetInput = z.infer<typeof createDrillSetSchema>;
 export type UpdateDrillSetInput = z.infer<typeof updateDrillSetSchema>;
@@ -55,3 +59,4 @@ export type UpdateSetCategoryInput = z.infer<typeof updateSetCategorySchema>;
 export type AddDrillToSetCategoryInput = z.infer<typeof addDrillToSetCategorySchema>;
 export type RejectSetInput = z.infer<typeof rejectSetSchema>;
 export type AdoptSetInput = z.infer<typeof adoptSetSchema>;
+export type ToggleSetEnabledInput = z.infer<typeof toggleSetEnabledSchema>;

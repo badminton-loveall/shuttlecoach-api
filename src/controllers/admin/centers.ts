@@ -21,6 +21,7 @@ export const listCenters = async (
         is_active, head_coach_id, plan_type, subscription_expires_at,
         sport, marketplace_enabled, created_at, updated_at
        FROM centers
+       WHERE is_system = false
        ORDER BY created_at DESC`
     );
 

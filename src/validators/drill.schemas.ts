@@ -35,6 +35,7 @@ export const marketplaceQuerySchema = z.object({
 export const listDrillsQuerySchema = z.object({
   category: z.string().max(50).optional(),
   search: z.string().max(100).optional(),
+  annotatePackStatus: z.enum(['true', 'false']).optional(),
 });
 
 export const adminListDrillsQuerySchema = z.object({

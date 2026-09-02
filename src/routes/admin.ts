@@ -28,10 +28,16 @@ import {
   getSetForReview,
   approveSet,
   rejectSet,
+  addOfficialSetCategory,
+  deleteOfficialSetCategory,
+  addOfficialSetDrill,
+  removeOfficialSetDrill,
 } from '../controllers/admin/drillSets';
 import {
   adminSetQuerySchema,
   rejectSetSchema,
+  createSetCategorySchema,
+  addDrillToSetCategorySchema,
 } from '../validators/drillSet.schemas';
 
 const router = Router();
@@ -147,5 +153,37 @@ router.post('/drill-sets/:id/approve', approveSet);
  * pending_review -> rejected (+ optional reason)
  */
 router.post('/drill-sets/:id/reject', validateRequest(rejectSetSchema), rejectSet);
+
+/**
+ * POST /api/admin/drill-sets/:id/categories
+ * Add a category to the official catalog (Badminton Drills Pack).
+ */
+router.post(
+  '/drill-sets/:id/categories',
+  validateRequest(createSetCategorySchema),
+  addOfficialSetCategory
+);
+
+/**
+ * DELETE /api/admin/drill-sets/:id/categories/:categoryId
+ * Remove a category from the official catalog.
+ */
+router.delete('/drill-sets/:id/categories/:categoryId', deleteOfficialSetCategory);
+
+/**
+ * POST /api/admin/drill-sets/:id/categories/:categoryId/drills
+ * Add a global drill to a category in the official catalog.
+ */
+router.post(
+  '/drill-sets/:id/categories/:categoryId/drills',
+  validateRequest(addDrillToSetCategorySchema),
+  addOfficialSetDrill
+);
+
+/**
+ * DELETE /api/admin/drill-sets/:id/categories/:categoryId/drills/:drillId
+ * Remove a drill from a category in the official catalog.
+ */
+router.delete('/drill-sets/:id/categories/:categoryId/drills/:drillId', removeOfficialSetDrill);
 
 export default router;

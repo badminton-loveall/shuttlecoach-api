@@ -15,23 +15,35 @@ export const getDashboard = async (
 ): Promise<void> => {
   try {
     // Aggregate totals using database-level queries
-    const [activeCentersResult, totalStudentsResult, totalCoachesResult, totalRevenueResult] =
-      await Promise.all([
-        query(`SELECT COUNT(*) AS count FROM centers WHERE is_active = true`),
-        query(`SELECT COUNT(*) AS count FROM students`),
-        query(
-          `SELECT COUNT(*) AS count FROM users WHERE role IN ('HEAD_COACH', 'ASSISTANT_COACH')`
-        ),
-        query(
-          `SELECT COALESCE(SUM(amount), 0) AS total FROM fee_records WHERE status = 'PAID'`
-        ),
-      ]);
+    const [
+      activeCentersResult,
+      totalStudentsResult,
+      totalCoachesResult,
+      totalRevenueResult,
+      marketplacePacksResult,
+      pendingReviewsResult,
+    ] = await Promise.all([
+      query(`SELECT COUNT(*) AS count FROM centers WHERE is_active = true AND is_system = false`),
+      query(`SELECT COUNT(*) AS count FROM students`),
+      query(
+        `SELECT COUNT(*) AS count FROM users WHERE role IN ('HEAD_COACH', 'ASSISTANT_COACH')`
+      ),
+      query(
+        `SELECT COALESCE(SUM(amount), 0) AS total FROM fee_records WHERE status = 'PAID'`
+      ),
+      query(`SELECT COUNT(*) AS count FROM drill_sets WHERE is_archived = false`),
+      query(
+        `SELECT COUNT(*) AS count FROM drill_sets WHERE status = 'pending_review' AND is_archived = false`
+      ),
+    ]);
 
     const totals = {
       activeCenters: parseInt(activeCentersResult.rows[0].count, 10),
       totalStudents: parseInt(totalStudentsResult.rows[0].count, 10),
       totalCoaches: parseInt(totalCoachesResult.rows[0].count, 10),
       totalRevenue: parseFloat(totalRevenueResult.rows[0].total),
+      marketplacePacks: parseInt(marketplacePacksResult.rows[0].count, 10),
+      pendingReviews: parseInt(pendingReviewsResult.rows[0].count, 10),
     };
 
     // Per-center breakdown using JOINs and aggregation grouped by center_id
@@ -61,7 +73,7 @@ export const getDashboard = async (
           AND month_year = TO_CHAR(CURRENT_DATE, 'YYYY-MM')
         GROUP BY center_id
       ) r ON r.center_id = c.id
-      WHERE c.is_active = true
+      WHERE c.is_active = true AND c.is_system = false
       ORDER BY c.name ASC
     `);
 

@@ -17,6 +17,8 @@ function mapSetRow(row: any) {
     rejectionReason: row.rejection_reason,
     sourceSetId: row.source_set_id,
     isArchived: row.is_archived,
+    isEnabled: row.is_enabled,
+    isOfficial: row.is_official,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     ...(row.drill_count !== undefined ? { drillCount: Number(row.drill_count) } : {}),
@@ -615,8 +617,9 @@ export const getMarketplaceSetDetail = async (req: TenantRequest, res: Response)
     }
 
     const categories = await loadSetCategories(id);
+    const drillCount = categories.reduce((sum, c) => sum + (c.drills?.length || 0), 0);
 
-    res.status(200).json({ ...mapSetRow(setResult.rows[0]), categories });
+    res.status(200).json({ ...mapSetRow(setResult.rows[0]), drillCount, categories });
   } catch (error) {
     console.error('Get marketplace set detail error:', error);
     res.status(500).json({ error: 'An error occurred while fetching the set' });
@@ -673,10 +676,10 @@ export const adoptSet = async (req: TenantRequest, res: Response): Promise<void>
       await client.query('BEGIN');
 
       const newSetResult = await client.query(
-        `INSERT INTO drill_sets (name, description, sport, center_id, created_by, status, source_set_id)
-         VALUES ($1, $2, $3, $4, $5, 'draft', $6)
+        `INSERT INTO drill_sets (name, description, sport, center_id, created_by, status, source_set_id, is_official)
+         VALUES ($1, $2, $3, $4, $5, 'draft', $6, $7)
          RETURNING *`,
-        [source.name, source.description, source.sport, centerId, userId, setId]
+        [source.name, source.description, source.sport, centerId, userId, setId, source.is_official]
       );
       const newSet = newSetResult.rows[0];
 
@@ -732,5 +735,37 @@ export const adoptSet = async (req: TenantRequest, res: Response): Promise<void>
   } catch (error) {
     console.error('Adopt drill set error:', error);
     res.status(500).json({ error: 'An error occurred while adopting the set' });
+  }
+};
+
+/**
+ * PATCH /api/drill-sets/:id/enabled
+ * Enable/disable a set the center owns or has adopted. Works in any status
+ * (not just draft), and any time — this toggles whether the set's drills are
+ * offered for new assignments, not its content or review state.
+ * Requires: HEAD_COACH
+ */
+export const toggleSetEnabled = async (req: TenantRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { enabled } = req.body;
+    const centerId = req.tenantCenterId;
+
+    const result = await query(
+      `UPDATE drill_sets SET is_enabled = $1, updated_at = NOW()
+       WHERE id = $2 AND center_id = $3 AND is_archived = false
+       RETURNING *`,
+      [enabled, id, centerId]
+    );
+
+    if (result.rowCount === 0) {
+      res.status(404).json({ error: 'Set not found' });
+      return;
+    }
+
+    res.status(200).json(mapSetRow(result.rows[0]));
+  } catch (error) {
+    console.error('Toggle drill set enabled error:', error);
+    res.status(500).json({ error: 'An error occurred while updating the set' });
   }
 };

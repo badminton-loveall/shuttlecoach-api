@@ -17,6 +17,8 @@ function mapSetRow(row: any) {
     rejectionReason: row.rejection_reason,
     sourceSetId: row.source_set_id,
     isArchived: row.is_archived,
+    isEnabled: row.is_enabled,
+    isOfficial: row.is_official,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     ...(row.drill_count !== undefined ? { drillCount: Number(row.drill_count) } : {}),
@@ -71,11 +73,19 @@ async function loadSetCategories(setId: string | string[]) {
 /**
  * GET /api/admin/drill-sets
  * Review queue: list drill sets across all centers, filterable by status.
- * Defaults to pending_review.
+ * Defaults to pending_review; status=all returns every status (the
+ * full-catalog Marketplace browse view, as opposed to the approval queue).
  */
 export const listSetsForReview = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const status = (req.query.status as string) || 'pending_review';
+    const conditions = ['ds.is_archived = false'];
+    const params: any[] = [];
+
+    if (status !== 'all') {
+      conditions.push('ds.status = $1');
+      params.push(status);
+    }
 
     const result = await query(
       `SELECT ds.*, c.name AS center_name, u.name AS coach_name, COUNT(dscd.id) AS drill_count
@@ -84,10 +94,10 @@ export const listSetsForReview = async (req: AuthRequest, res: Response): Promis
        JOIN users u ON u.id = ds.created_by
        LEFT JOIN drill_set_categories dsc ON dsc.set_id = ds.id
        LEFT JOIN drill_set_category_drills dscd ON dscd.set_category_id = dsc.id
-       WHERE ds.status = $1 AND ds.is_archived = false
+       WHERE ${conditions.join(' AND ')}
        GROUP BY ds.id, c.name, u.name
-       ORDER BY ds.submitted_at ASC NULLS LAST, ds.updated_at DESC`,
-      [status]
+       ORDER BY ds.is_official DESC, ds.submitted_at ASC NULLS LAST, ds.updated_at DESC`,
+      params
     );
 
     res.status(200).json({ sets: result.rows.map(mapSetRow) });
@@ -185,5 +195,174 @@ export const rejectSet = async (req: AuthRequest, res: Response): Promise<void> 
   } catch (error) {
     console.error('Reject set error:', error);
     res.status(500).json({ error: 'An error occurred while rejecting the set' });
+  }
+};
+
+/**
+ * Verifies the target set is the admin-curated official catalog (is_official).
+ * Admin editing is intentionally restricted to official sets only — mutating
+ * a coach's already-published content directly would bypass their ownership
+ * and the submit/review workflow entirely.
+ */
+async function requireOfficialSet(res: Response, setId: string | string[]) {
+  const result = await query(
+    `SELECT id FROM drill_sets WHERE id = $1 AND is_official = true AND is_archived = false`,
+    [setId]
+  );
+
+  if (result.rowCount === 0) {
+    res.status(404).json({ error: 'Official set not found' });
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * POST /api/admin/drill-sets/:id/categories
+ * Add a category to the official catalog. Unlike coach-owned sets, this
+ * works regardless of status (the official set is always 'published').
+ */
+export const addOfficialSetCategory = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { name } = req.body;
+
+    if (!(await requireOfficialSet(res, id))) return;
+
+    const sortResult = await query(
+      `SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM drill_set_categories WHERE set_id = $1`,
+      [id]
+    );
+
+    const result = await query(
+      `INSERT INTO drill_set_categories (set_id, name, sort_order) VALUES ($1, $2, $3) RETURNING *`,
+      [id, name, sortResult.rows[0].next_order]
+    );
+
+    const row = result.rows[0];
+    res.status(201).json({
+      id: row.id,
+      setId: row.set_id,
+      name: row.name,
+      sortOrder: row.sort_order,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      drills: [],
+    });
+  } catch (error) {
+    console.error('Add official set category error:', error);
+    res.status(500).json({ error: 'An error occurred while adding the category' });
+  }
+};
+
+/**
+ * DELETE /api/admin/drill-sets/:id/categories/:categoryId
+ * Remove a category (and its drill links) from the official catalog.
+ */
+export const deleteOfficialSetCategory = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id, categoryId } = req.params;
+
+    if (!(await requireOfficialSet(res, id))) return;
+
+    const result = await query(
+      `DELETE FROM drill_set_categories WHERE id = $1 AND set_id = $2 RETURNING id`,
+      [categoryId, id]
+    );
+
+    if (result.rowCount === 0) {
+      res.status(404).json({ error: 'Category not found in this set' });
+      return;
+    }
+
+    res.status(200).json({ message: 'Category removed' });
+  } catch (error) {
+    console.error('Delete official set category error:', error);
+    res.status(500).json({ error: 'An error occurred while removing the category' });
+  }
+};
+
+/**
+ * POST /api/admin/drill-sets/:id/categories/:categoryId/drills
+ * Add an existing global drill (center_id IS NULL) to a category in the
+ * official catalog.
+ */
+export const addOfficialSetDrill = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id, categoryId } = req.params;
+    const { drillId } = req.body;
+
+    if (!(await requireOfficialSet(res, id))) return;
+
+    const categoryResult = await query(
+      `SELECT id FROM drill_set_categories WHERE id = $1 AND set_id = $2`,
+      [categoryId, id]
+    );
+
+    if (categoryResult.rowCount === 0) {
+      res.status(404).json({ error: 'Category not found in this set' });
+      return;
+    }
+
+    const drillResult = await query(
+      `SELECT id FROM drills WHERE id = $1 AND center_id IS NULL AND is_archived = false`,
+      [drillId]
+    );
+
+    if (drillResult.rowCount === 0) {
+      res.status(400).json({ error: 'Drill not found or not eligible' });
+      return;
+    }
+
+    const existingItem = await query(
+      `SELECT id FROM drill_set_category_drills WHERE set_category_id = $1 AND drill_id = $2`,
+      [categoryId, drillId]
+    );
+
+    if (existingItem.rowCount! > 0) {
+      res.status(409).json({ error: 'Drill already in this category' });
+      return;
+    }
+
+    await query(
+      `INSERT INTO drill_set_category_drills (set_category_id, drill_id) VALUES ($1, $2)`,
+      [categoryId, drillId]
+    );
+
+    res.status(201).json({ message: 'Drill added to category' });
+  } catch (error) {
+    console.error('Add official set drill error:', error);
+    res.status(500).json({ error: 'An error occurred while adding the drill' });
+  }
+};
+
+/**
+ * DELETE /api/admin/drill-sets/:id/categories/:categoryId/drills/:drillId
+ * Remove a drill from a category in the official catalog.
+ */
+export const removeOfficialSetDrill = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id, categoryId, drillId } = req.params;
+
+    if (!(await requireOfficialSet(res, id))) return;
+
+    const result = await query(
+      `DELETE FROM drill_set_category_drills
+       WHERE set_category_id = $1 AND drill_id = $2
+         AND set_category_id IN (SELECT id FROM drill_set_categories WHERE set_id = $3)
+       RETURNING id`,
+      [categoryId, drillId, id]
+    );
+
+    if (result.rowCount === 0) {
+      res.status(404).json({ error: 'Drill not found in this category' });
+      return;
+    }
+
+    res.status(200).json({ message: 'Drill removed from category' });
+  } catch (error) {
+    console.error('Remove official set drill error:', error);
+    res.status(500).json({ error: 'An error occurred while removing the drill' });
   }
 };

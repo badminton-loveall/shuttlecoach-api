@@ -41,7 +41,7 @@ export const listDrills = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { category, search } = req.query;
+    const { category, search, annotatePackStatus } = req.query;
     const conditions: string[] = ['is_archived = false'];
     const params: any[] = [];
     let paramIndex = 1;
@@ -63,15 +63,41 @@ export const listDrills = async (
       paramIndex++;
     }
 
+    // Only computed when requested by an assignment picker (e.g. curriculum
+    // week editor): every drill is still returned regardless of this flag —
+    // it never filters rows, it only annotates whether the drill currently
+    // belongs to a pack the center has disabled, so a "Used"/disabled badge
+    // can be shown without ever hiding the drill outright.
+    const packStatusColumn = annotatePackStatus === 'true'
+      ? `, (
+          NOT EXISTS (
+            SELECT 1 FROM drill_set_category_drills dscd
+            JOIN drill_set_categories dsc ON dsc.id = dscd.set_category_id
+            JOIN drill_sets ds ON ds.id = dsc.set_id
+            WHERE dscd.drill_id = drills.id AND ds.center_id = drills.center_id
+          )
+          OR EXISTS (
+            SELECT 1 FROM drill_set_category_drills dscd
+            JOIN drill_set_categories dsc ON dsc.id = dscd.set_category_id
+            JOIN drill_sets ds ON ds.id = dsc.set_id
+            WHERE dscd.drill_id = drills.id AND ds.center_id = drills.center_id AND ds.is_enabled = true
+          )
+        ) AS is_assignable`
+      : '';
+
     const result = await query(
-      `SELECT id, name, description, category, sport, created_at, updated_at
+      `SELECT id, name, description, category, sport, created_at, updated_at${packStatusColumn}
        FROM drills
        WHERE ${conditions.join(' AND ')}
        ORDER BY category, name`,
       params
     );
 
-    res.status(200).json({ drills: result.rows });
+    const drills = annotatePackStatus === 'true'
+      ? result.rows.map(({ is_assignable, ...row }) => ({ ...row, isAssignable: is_assignable }))
+      : result.rows;
+
+    res.status(200).json({ drills });
   } catch (error) {
     console.error('List drills error:', error);
     res.status(500).json({
