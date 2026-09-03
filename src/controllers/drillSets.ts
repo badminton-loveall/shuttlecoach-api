@@ -34,6 +34,10 @@ function mapDrillRow(row: any) {
     description: row.description,
     category: row.category,
     sport: row.sport,
+    // Whether a demonstration clip exists at all — shown to everyone as an
+    // upsell signal. Whether the requesting center can actually *watch* it is
+    // a separate, subscription-gated check (see controllers/marketplace.ts).
+    ...(row.has_video !== undefined ? { hasVideo: row.has_video } : {}),
   };
 }
 
@@ -47,9 +51,12 @@ async function loadSetCategories(setId: string | string[]) {
   );
 
   const itemsResult = await query(
-    `SELECT dscd.set_category_id, d.* FROM drill_set_category_drills dscd
+    `SELECT dscd.set_category_id, d.*,
+            (COALESCE(d.video_url, src.video_url) IS NOT NULL) AS has_video
+     FROM drill_set_category_drills dscd
      JOIN drill_set_categories dsc ON dsc.id = dscd.set_category_id
      JOIN drills d ON d.id = dscd.drill_id
+     LEFT JOIN drills src ON src.id = d.source_drill_id
      WHERE dsc.set_id = $1
      ORDER BY d.category, d.name`,
     [setId]

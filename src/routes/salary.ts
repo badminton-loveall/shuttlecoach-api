@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authenticate, authorize } from '../middleware/auth';
 import { centerActive } from '../middleware/centerActive';
 import { tenantScope } from '../middleware/tenantScope';
+import { requireAccountingSubscription } from '../middleware/requireAccountingSubscription';
 import { validateRequest } from '../middleware/validation';
 import { UserRole } from '../types';
 import { generateSalarySchema } from '../validators/salary.schemas';
@@ -19,6 +20,7 @@ const router = Router();
 router.use(authenticate);
 router.use(centerActive);
 router.use(tenantScope);
+router.use(requireAccountingSubscription);
 
 /**
  * POST /api/salary/generate

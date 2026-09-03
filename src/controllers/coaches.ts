@@ -6,7 +6,8 @@ import { generateResetToken, hashToken } from '../utils/tokenGenerator';
 import { sendCoachWelcomeEmail } from '../services/welcomeEmailService';
 import { UserRole } from '../types';
 import { TenantRequest } from '../middleware/tenantScope';
-import { createMembership, getMembership } from '../services/membershipService';
+import { createMembership, getMembership, removeMembership } from '../services/membershipService';
+import { getEffectiveCapacity } from '../services/subscriptionService';
 
 /**
  * Validates whether a string is a valid UUID v4 format.
@@ -35,6 +36,26 @@ export const createCoach = async (
         error: 'Name and username (email) are required',
       });
       return;
+    }
+
+    // Coach Capacity is a marketplace item — a center with no active
+    // subscription still gets the catalog's free baseline seats. Checked
+    // before either creation path below (brand-new coach, or granting an
+    // existing user membership here), since both grow this center's headcount.
+    if (req.tenantCenterId) {
+      const capacityLimit = await getEffectiveCapacity(req.tenantCenterId, 'COACH_CAPACITY');
+      const countResult = await query(
+        `SELECT COUNT(*) FROM user_center_memberships WHERE center_id = $1 AND role IN ($2, $3)`,
+        [req.tenantCenterId, UserRole.HEAD_COACH, UserRole.ASSISTANT_COACH]
+      );
+      const currentCount = parseInt(countResult.rows[0].count, 10);
+      if (currentCount >= capacityLimit) {
+        res.status(403).json({
+          error: `Coach limit reached (${capacityLimit}). Upgrade your Coach Capacity plan in the Marketplace to add more coaches.`,
+          code: 'CAPACITY_LIMIT_REACHED',
+        });
+        return;
+      }
     }
 
     // If no password provided, generate a random one (coach sets it via email link)
@@ -547,6 +568,70 @@ export const toggleFeeAccess = async (
     console.error('Toggle fee access error:', error);
     res.status(500).json({
       error: 'An error occurred while toggling fee access',
+    });
+  }
+};
+
+/**
+ * DELETE /api/coaches/:id
+ * Delete an assistant coach (Head Coach only).
+ *
+ * The shared `users` row is never hard-deleted: it may hold memberships at
+ * other centers (see createCoach's "grant existing account" path), and
+ * several tables (coach_salary_profile, courses, batch_time_templates, etc.)
+ * hold non-nullable FKs to users.id that a hard delete would violate for any
+ * coach with real activity. Instead this unassigns the coach from batches
+ * and students at this center — matching the frontend's confirmation dialog
+ * — then removes their membership at this center only. With zero
+ * memberships left, login already rejects them here (see createCoach), so
+ * this is effectively "deleted" from this center's point of view.
+ */
+export const deleteCoach = async (
+  req: TenantRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { id: coachId } = req.params;
+
+    if (!req.tenantCenterId) {
+      res.status(403).json({ error: 'Cannot delete coaches outside your center' });
+      return;
+    }
+
+    const membership = await getMembership(String(coachId), req.tenantCenterId);
+    if (!membership || membership.role !== UserRole.ASSISTANT_COACH) {
+      res.status(404).json({ error: 'Coach not found' });
+      return;
+    }
+
+    // Unassign this coach from all batches and students at this center
+    await query(
+      'UPDATE batches SET assigned_coach_id = NULL WHERE assigned_coach_id = $1 AND center_id = $2',
+      [coachId, req.tenantCenterId]
+    );
+    await query(
+      'UPDATE students SET assigned_coach_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE assigned_coach_id = $1 AND center_id = $2',
+      [coachId, req.tenantCenterId]
+    );
+
+    // Also clear the multi-coach-per-batch assignment table (see batchCoachAssignments'
+    // removeCoach, which performs the same cleanup when a coach leaves a single batch).
+    await query(
+      `DELETE FROM batch_coach_assignments
+       WHERE coach_id = $1 AND batch_id IN (SELECT id FROM batches WHERE center_id = $2)`,
+      [coachId, req.tenantCenterId]
+    );
+
+    await removeMembership(String(coachId), req.tenantCenterId, UserRole.ASSISTANT_COACH);
+
+    res.status(200).json({
+      success: true,
+      message: 'Coach deleted successfully',
+    });
+  } catch (error) {
+    console.error('Delete coach error:', error);
+    res.status(500).json({
+      error: 'An error occurred while deleting the coach',
     });
   }
 };

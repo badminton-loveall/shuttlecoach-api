@@ -1,5 +1,5 @@
 import { query } from '../config/database';
-import { LedgerEntryType, LedgerReferenceType, LedgerEntry, LedgerQueryFilters, LedgerQueryResult } from '../types';
+import { LedgerEntryType, LedgerReferenceType, LedgerEntry, LedgerQueryFilters, LedgerQueryResult, CenterLedgerSummary, PlatformLedgerSummary } from '../types';
 import { getMonthRange, getQuarterRange, getFinancialYearRange } from '../utils/ledgerDateUtils';
 
 // ============================================================
@@ -21,6 +21,14 @@ export interface SalaryRecordForLedger {
   amount: number;
   paymentDate: string;    // YYYY-MM-DD
   salaryPeriod: string;   // e.g., "April 2025"
+  paymentMethod?: string;
+}
+
+export interface SubscriptionRecordForLedger {
+  id: string;            // center_subscriptions.id
+  amount: number;
+  activatedDate: string; // YYYY-MM-DD
+  itemName: string;      // marketplace_items.name, for the description
   paymentMethod?: string;
 }
 
@@ -121,6 +129,49 @@ export async function createDebitEntry(
       salaryRecord.coachUserId,
       coachName,
       salaryRecord.paymentMethod || null,
+    ]
+  );
+
+  return mapRowToLedgerEntry(result.rows[0]);
+}
+
+/**
+ * Creates a DEBIT ledger entry for an activated marketplace subscription —
+ * a subscription payment is money leaving the center's account, same
+ * direction as a coach salary. Returns null if an entry already exists for
+ * this subscription (idempotent).
+ */
+export async function createSubscriptionDebitEntry(
+  subscriptionRecord: SubscriptionRecordForLedger,
+  centerId: string
+): Promise<LedgerEntry | null> {
+  const exists = await hasDuplicateEntry(
+    LedgerReferenceType.SUBSCRIPTION,
+    subscriptionRecord.id,
+    LedgerEntryType.DEBIT,
+    centerId
+  );
+  if (exists) return null;
+
+  const description = `Subscription payment - ${subscriptionRecord.itemName}`;
+
+  const result = await query(
+    `INSERT INTO ledger_entries
+       (center_id, entry_type, amount, transaction_date, description,
+        reference_type, reference_id, person_id, person_name, payment_method)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+     RETURNING *`,
+    [
+      centerId,
+      LedgerEntryType.DEBIT,
+      subscriptionRecord.amount,
+      subscriptionRecord.activatedDate,
+      description,
+      LedgerReferenceType.SUBSCRIPTION,
+      subscriptionRecord.id,
+      null,
+      null,
+      subscriptionRecord.paymentMethod || null,
     ]
   );
 
@@ -402,4 +453,63 @@ export async function queryLedger(
       openingBalance,
     },
   };
+}
+
+// ============================================================
+// Ledger Service — Platform-wide Rollup (admin, across every center)
+// ============================================================
+
+/**
+ * Every real center's income/expense totals in one place, optionally scoped
+ * to a month — the admin's "how is everyone doing" view. No opening balance
+ * concept here (that's per-center, running from that center's own history);
+ * this is a period total across the whole platform. The system center
+ * (owns the official catalog, not a real customer) is excluded.
+ */
+export async function getPlatformLedgerSummary(month?: string): Promise<PlatformLedgerSummary> {
+  const params: any[] = [];
+  let dateFilter = '';
+
+  if (month) {
+    const { start, end } = getMonthRange(month);
+    dateFilter = 'AND le.transaction_date BETWEEN $1 AND $2';
+    params.push(start, end);
+  }
+
+  const result = await query(
+    `SELECT
+       c.id AS center_id,
+       c.name AS center_name,
+       COALESCE(SUM(le.amount) FILTER (WHERE le.entry_type = 'CREDIT'), 0) AS total_credits,
+       COALESCE(SUM(le.amount) FILTER (WHERE le.entry_type = 'DEBIT'), 0) AS total_debits
+     FROM centers c
+     LEFT JOIN ledger_entries le ON le.center_id = c.id ${dateFilter}
+     WHERE c.is_system = false
+     GROUP BY c.id, c.name
+     ORDER BY c.name`,
+    params
+  );
+
+  const centers: CenterLedgerSummary[] = result.rows.map((row) => {
+    const totalCredits = parseFloat(row.total_credits);
+    const totalDebits = parseFloat(row.total_debits);
+    return {
+      centerId: row.center_id,
+      centerName: row.center_name,
+      totalCredits,
+      totalDebits,
+      netBalance: totalCredits - totalDebits,
+    };
+  });
+
+  const totals = centers.reduce(
+    (acc, c) => ({
+      totalCredits: acc.totalCredits + c.totalCredits,
+      totalDebits: acc.totalDebits + c.totalDebits,
+      netBalance: acc.netBalance + c.netBalance,
+    }),
+    { totalCredits: 0, totalDebits: 0, netBalance: 0 }
+  );
+
+  return { centers, totals };
 }

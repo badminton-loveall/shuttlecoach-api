@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authenticate, authorize } from '../middleware/auth';
 import { tenantScope } from '../middleware/tenantScope';
 import { requireFeeAccess } from '../middleware/feeAccess';
+import { requireAccountingSubscription } from '../middleware/requireAccountingSubscription';
 import { validateRequest, validateQuery } from '../middleware/validation';
 import { ledgerQuerySchema, manualEntrySchema } from '../validators/ledger.schemas';
 import { getLedger, createManualLedgerEntry } from '../controllers/ledger';
@@ -13,6 +14,7 @@ const router = Router();
 router.use(authenticate);
 router.use(tenantScope);
 router.use(requireFeeAccess);
+router.use(requireAccountingSubscription);
 
 /**
  * GET /api/ledger

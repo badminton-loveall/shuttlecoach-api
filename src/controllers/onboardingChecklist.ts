@@ -11,15 +11,14 @@ import {
 } from '../services/onboardingChecklistService';
 
 /**
- * Labels for each checklist item key.
+ * Labels for each checklist item key — short noun phrases since these
+ * render as card titles, not sentence-style list items.
  */
 const ITEM_LABELS: Record<string, string> = {
-  add_coach: 'Add a coach',
-  add_students: 'Add students',
-  setup_curriculum: 'Set up curriculum',
-  create_batch_templates: 'Create batch templates',
-  create_batches: 'Create batches',
-  assign_students: 'Assign students to coaches/batches',
+  add_coach: 'Add Coach',
+  create_batch: 'Batch',
+  setup_curriculum: 'Curriculum',
+  add_students: 'Student',
 };
 
 /**
@@ -27,11 +26,9 @@ const ITEM_LABELS: Record<string, string> = {
  */
 const ITEM_LINKS: Record<string, string> = {
   add_coach: '/coaches',
-  add_students: '/students',
+  create_batch: '/batch-timings',
   setup_curriculum: '/curriculum',
-  create_batch_templates: '/batches',
-  create_batches: '/batches',
-  assign_students: '/students',
+  add_students: '/students',
 };
 
 /**

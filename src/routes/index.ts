@@ -29,6 +29,7 @@ import studentEnrollmentRoutes from './studentEnrollments';
 import onboardingChecklistRoutes from './onboardingChecklist';
 import ledgerRoutes from './ledger';
 import salaryRoutes from './salary';
+import marketplaceRoutes from './marketplace';
 import cronRoutes from './cron';
 import { getCenterInfo } from '../controllers/public/centers';
 
@@ -127,6 +128,9 @@ router.use('/ledger', ledgerRoutes);
 
 // Salary routes (salary generation, listing, pay/revert)
 router.use('/salary', salaryRoutes);
+
+// Marketplace routes (catalog browsing, subscriptions, drill-set video access)
+router.use('/marketplace', marketplaceRoutes);
 
 // Cron-triggered routes (no user auth — secured via CRON_SECRET inside each controller)
 router.use('/cron', cronRoutes);

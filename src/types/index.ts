@@ -612,6 +612,7 @@ export enum LedgerReferenceType {
   FEE = 'FEE',
   SALARY = 'SALARY',
   MANUAL = 'MANUAL',
+  SUBSCRIPTION = 'SUBSCRIPTION',
 }
 
 export interface LedgerEntry {
@@ -648,6 +649,23 @@ export interface LedgerQueryResult {
     totalDebits: number;
     netBalance: number;
     openingBalance: number;
+  };
+}
+
+export interface CenterLedgerSummary {
+  centerId: string;
+  centerName: string;
+  totalCredits: number;
+  totalDebits: number;
+  netBalance: number;
+}
+
+export interface PlatformLedgerSummary {
+  centers: CenterLedgerSummary[];
+  totals: {
+    totalCredits: number;
+    totalDebits: number;
+    netBalance: number;
   };
 }
 
@@ -769,4 +787,87 @@ export interface SetMarketplaceQuery {
 
 export interface AdminSetQuery {
   status?: SetStatus;
+}
+
+// ============================================================================
+// Marketplace Types
+// ============================================================================
+
+export type MarketplaceItemCategory =
+  | 'DRILL_PACK'
+  | 'ACCOUNTING'
+  | 'STUDENT_CAPACITY'
+  | 'COACH_CAPACITY';
+
+export type DrillPackTier = 'STANDARD' | 'VIDEO_ENHANCED';
+
+export type SubscriptionStatus = 'ACTIVE' | 'EXPIRED' | 'CANCELLED' | 'PENDING' | 'REJECTED';
+
+export interface MarketplaceItem {
+  id: string;
+  name: string;
+  description: string | null;
+  category: MarketplaceItemCategory;
+  drillSetId: string | null;
+  tier: DrillPackTier | null;
+  capacityLimit: number | null;
+  price: number;
+  billingPeriod: string;
+  durationDays: number | null;
+  isEnabled: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CenterSubscription {
+  id: string;
+  centerId: string;
+  marketplaceItemId: string;
+  status: SubscriptionStatus;
+  startedAt: Date;
+  expiresAt: Date | null;
+  activatedBy: string;
+  pricePaid: number;
+  studentVideoAccessEnabled: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  // Enrichment fields, present only when the query joins marketplace_items / centers
+  itemName?: string;
+  itemCategory?: MarketplaceItemCategory;
+  itemPrice?: number;
+  centerName?: string;
+}
+
+export interface ItemRevenue {
+  itemId: string;
+  itemName: string;
+  category: MarketplaceItemCategory;
+  price: number;
+  activeCount: number;
+  totalRevenue: number;
+}
+
+export interface CreateMarketplaceItemRequest {
+  name: string;
+  description?: string;
+  category: MarketplaceItemCategory;
+  drillSetId?: string;
+  tier?: DrillPackTier;
+  capacityLimit?: number;
+  price: number;
+  durationDays?: number;
+}
+
+export interface UpdateMarketplaceItemRequest {
+  name?: string;
+  description?: string;
+  price?: number;
+  durationDays?: number;
+  isEnabled?: boolean;
+}
+
+export interface ActivateSubscriptionRequest {
+  marketplaceItemId: string;
+  priceOverride?: number;
+  expiresAt?: string; // ISO date; overrides the item's duration_days when provided
 }

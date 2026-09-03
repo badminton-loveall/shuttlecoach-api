@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { authenticate, authorize } from '../middleware/auth';
 import { centerActive } from '../middleware/centerActive';
 import { tenantScope } from '../middleware/tenantScope';
-import { createCoach, listCoaches, assignCoach, toggleFeeAccess, updateCoach, getCoach } from '../controllers/coaches';
+import { createCoach, listCoaches, assignCoach, toggleFeeAccess, updateCoach, getCoach, deleteCoach } from '../controllers/coaches';
 import { adminResetPassword } from '../controllers/password';
 import { UserRole } from '../types';
 import { validateRequest } from '../middleware/validation';
@@ -51,6 +51,12 @@ router.patch('/:id', authorize(UserRole.HEAD_COACH), updateCoach);
  * Assign or unassign students or batch to a coach
  */
 router.patch('/:id/assign', authorize(UserRole.HEAD_COACH), validateRequest(assignCoachSchema), assignCoach);
+
+/**
+ * DELETE /api/coaches/:id
+ * Delete an assistant coach (unassigns their batches/students first)
+ */
+router.delete('/:id', authorize(UserRole.HEAD_COACH), deleteCoach);
 
 /**
  * POST /api/coaches/:id/reset-password

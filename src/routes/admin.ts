@@ -28,6 +28,7 @@ import {
   getSetForReview,
   approveSet,
   rejectSet,
+  resetSetToDraft,
   addOfficialSetCategory,
   deleteOfficialSetCategory,
   addOfficialSetDrill,
@@ -39,6 +40,19 @@ import {
   createSetCategorySchema,
   addDrillToSetCategorySchema,
 } from '../validators/drillSet.schemas';
+import { listMarketplaceItems, createMarketplaceItem, updateMarketplaceItem } from '../controllers/admin/marketplaceItems';
+import {
+  listCenterSubscriptions,
+  activateCenterSubscription,
+  cancelCenterSubscription,
+} from '../controllers/admin/subscriptions';
+import {
+  listSubscriptionRequests,
+  approveSubscriptionRequest,
+  rejectSubscriptionRequest,
+} from '../controllers/admin/subscriptionRequests';
+import { getSubscriptionAnalytics } from '../controllers/admin/subscriptionAnalytics';
+import { getPlatformAccounting } from '../controllers/admin/platformAccounting';
 
 const router = Router();
 
@@ -155,6 +169,13 @@ router.post('/drill-sets/:id/approve', approveSet);
 router.post('/drill-sets/:id/reject', validateRequest(rejectSetSchema), rejectSet);
 
 /**
+ * POST /api/admin/drill-sets/:id/reset-to-draft
+ * published|rejected -> draft (never for the official catalog). Also
+ * disables any marketplace_items packages tied to this set.
+ */
+router.post('/drill-sets/:id/reset-to-draft', resetSetToDraft);
+
+/**
  * POST /api/admin/drill-sets/:id/categories
  * Add a category to the official catalog (Badminton Drills Pack).
  */
@@ -185,5 +206,69 @@ router.post(
  * Remove a drill from a category in the official catalog.
  */
 router.delete('/drill-sets/:id/categories/:categoryId/drills/:drillId', removeOfficialSetDrill);
+
+/**
+ * GET /api/admin/marketplace-items
+ * The full catalog, including disabled items.
+ */
+router.get('/marketplace-items', listMarketplaceItems);
+
+/**
+ * POST /api/admin/marketplace-items
+ * Create a catalog item (drill-pack listing, Accounting, or a capacity tier).
+ */
+router.post('/marketplace-items', createMarketplaceItem);
+
+/**
+ * PATCH /api/admin/marketplace-items/:id
+ * Edit price, description, duration, or the Catalog Switch (isEnabled).
+ */
+router.patch('/marketplace-items/:id', updateMarketplaceItem);
+
+/**
+ * GET /api/admin/centers/:id/subscriptions
+ * A center's active marketplace subscriptions.
+ */
+router.get('/centers/:id/subscriptions', listCenterSubscriptions);
+
+/**
+ * POST /api/admin/centers/:id/subscriptions
+ * Admin-assisted activation after offline payment.
+ */
+router.post('/centers/:id/subscriptions', activateCenterSubscription);
+
+/**
+ * PATCH /api/admin/centers/:id/subscriptions/:marketplaceItemId/cancel
+ * Cancel a center's active subscription to one item.
+ */
+router.patch('/centers/:id/subscriptions/:marketplaceItemId/cancel', cancelCenterSubscription);
+
+/**
+ * GET /api/admin/subscription-requests
+ * Every center's pending self-serve requests.
+ */
+router.get('/subscription-requests', listSubscriptionRequests);
+
+/**
+ * POST /api/admin/subscription-requests/:id/approve
+ */
+router.post('/subscription-requests/:id/approve', approveSubscriptionRequest);
+
+/**
+ * POST /api/admin/subscription-requests/:id/reject
+ */
+router.post('/subscription-requests/:id/reject', rejectSubscriptionRequest);
+
+/**
+ * GET /api/admin/subscription-analytics
+ * Revenue by item, and every center's subscription/payment history.
+ */
+router.get('/subscription-analytics', getSubscriptionAnalytics);
+
+/**
+ * GET /api/admin/platform-accounting
+ * Every real center's income/expense totals in one place.
+ */
+router.get('/platform-accounting', getPlatformAccounting);
 
 export default router;

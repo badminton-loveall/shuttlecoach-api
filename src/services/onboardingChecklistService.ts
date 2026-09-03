@@ -14,19 +14,21 @@ export interface ChecklistItem {
 }
 
 /**
- * The six checklist item keys in order.
+ * The four checklist item keys, in the order the "Set up your center" cards
+ * render. Batch Templates is the only batch concept a coach manages now — a
+ * "batches" row is an internal detail resolved automatically from it — so
+ * this collapses the old create_batch_templates/create_batches/assign_students
+ * keys down to one create_batch step.
  */
 const CHECKLIST_KEYS = [
   'add_coach',
-  'add_students',
+  'create_batch',
   'setup_curriculum',
-  'create_batch_templates',
-  'create_batches',
-  'assign_students',
+  'add_students',
 ] as const;
 
 /**
- * Returns the default set of six incomplete checklist items.
+ * Returns the default set of incomplete checklist items.
  */
 function defaultItems(): ChecklistItem[] {
   return CHECKLIST_KEYS.map((key) => ({
@@ -37,8 +39,8 @@ function defaultItems(): ChecklistItem[] {
 }
 
 /**
- * Runs the single optimized query with six COUNT subqueries and returns
- * the live completion state for all six checklist items.
+ * Runs the single optimized query with one COUNT subquery per checklist item
+ * and returns the live completion state for each.
  *
  * Each item is considered complete if its count >= 1.
  */
@@ -51,9 +53,7 @@ export async function evaluateChecklistItems(
       (SELECT COUNT(*) FROM users WHERE center_id = $1 AND role IN ('ASSISTANT_COACH', 'HEAD_COACH') AND id != $2) AS coach_count,
       (SELECT COUNT(*) FROM students WHERE center_id = $1) AS student_count,
       (SELECT COUNT(*) FROM curriculum_plans WHERE center_id = $1) AS curriculum_count,
-      (SELECT COUNT(*) FROM batch_time_templates WHERE center_id = $1) AS template_count,
-      (SELECT COUNT(*) FROM batches WHERE center_id = $1) AS batch_count,
-      (SELECT COUNT(*) FROM students WHERE center_id = $1 AND (assigned_coach_id IS NOT NULL OR batch_id IS NOT NULL)) AS assigned_count`,
+      (SELECT COUNT(*) FROM batch_time_templates WHERE center_id = $1) AS template_count`,
     [centerId, headCoachId]
   );
 
@@ -63,9 +63,7 @@ export async function evaluateChecklistItems(
     add_coach: parseInt(row.coach_count, 10),
     add_students: parseInt(row.student_count, 10),
     setup_curriculum: parseInt(row.curriculum_count, 10),
-    create_batch_templates: parseInt(row.template_count, 10),
-    create_batches: parseInt(row.batch_count, 10),
-    assign_students: parseInt(row.assigned_count, 10),
+    create_batch: parseInt(row.template_count, 10),
   };
 
   return CHECKLIST_KEYS.map((key) => ({
@@ -174,7 +172,7 @@ export async function dismissChecklist(centerId: string): Promise<string> {
 }
 
 /**
- * Returns true only if ALL six items are completed.
+ * Returns true only if every item is completed.
  */
 export function computeAllComplete(items: ChecklistItem[]): boolean {
   return items.every((item) => item.completed);

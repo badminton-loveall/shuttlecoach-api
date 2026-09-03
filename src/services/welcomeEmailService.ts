@@ -135,7 +135,7 @@ export function renderWelcomeEmailHtml({
             <tr>
               <td style="padding: 10px 12px; border-bottom: 1px solid #F3F4F6;">
                 <span style="display: inline-block; width: 22px; height: 22px; background-color: #F3F4F6; border-radius: 50%; text-align: center; line-height: 22px; font-size: 11px; font-weight: 600; color: #6B7280; margin-right: 10px;">2</span>
-                <span style="color: #374151;">Add your students</span>
+                <span style="color: #374151;">Create a batch</span>
               </td>
             </tr>
             <tr>
@@ -145,21 +145,9 @@ export function renderWelcomeEmailHtml({
               </td>
             </tr>
             <tr>
-              <td style="padding: 10px 12px; border-bottom: 1px solid #F3F4F6;">
-                <span style="display: inline-block; width: 22px; height: 22px; background-color: #F3F4F6; border-radius: 50%; text-align: center; line-height: 22px; font-size: 11px; font-weight: 600; color: #6B7280; margin-right: 10px;">4</span>
-                <span style="color: #374151;">Create batch templates</span>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding: 10px 12px; border-bottom: 1px solid #F3F4F6;">
-                <span style="display: inline-block; width: 22px; height: 22px; background-color: #F3F4F6; border-radius: 50%; text-align: center; line-height: 22px; font-size: 11px; font-weight: 600; color: #6B7280; margin-right: 10px;">5</span>
-                <span style="color: #374151;">Create batches</span>
-              </td>
-            </tr>
-            <tr>
               <td style="padding: 10px 12px;">
-                <span style="display: inline-block; width: 22px; height: 22px; background-color: #F3F4F6; border-radius: 50%; text-align: center; line-height: 22px; font-size: 11px; font-weight: 600; color: #6B7280; margin-right: 10px;">6</span>
-                <span style="color: #374151;">Assign students to coaches/batches</span>
+                <span style="display: inline-block; width: 22px; height: 22px; background-color: #F3F4F6; border-radius: 50%; text-align: center; line-height: 22px; font-size: 11px; font-weight: 600; color: #6B7280; margin-right: 10px;">4</span>
+                <span style="color: #374151;">Add your students</span>
               </td>
             </tr>
           </table>

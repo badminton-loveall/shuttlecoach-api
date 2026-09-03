@@ -8,6 +8,7 @@ import { hashPassword } from '../utils/auth';
 import { generateResetToken, hashToken } from '../utils/tokenGenerator';
 import { sendStudentWelcomeEmail } from '../services/welcomeEmailService';
 import { autoCloneStudentPlan } from '../services/curriculumCloneService';
+import { getEffectiveCapacity } from '../services/subscriptionService';
 
 /**
  * POST /api/students
@@ -57,6 +58,21 @@ export const createStudent = async (
         error: 'Guardian name and phone are required for students under 18',
       });
       return;
+    }
+
+    // Student Capacity is a marketplace item — a center with no active
+    // subscription still gets the catalog's free baseline roster size.
+    if (req.tenantCenterId) {
+      const capacityLimit = await getEffectiveCapacity(req.tenantCenterId, 'STUDENT_CAPACITY');
+      const countResult = await query('SELECT COUNT(*) FROM students WHERE center_id = $1', [req.tenantCenterId]);
+      const currentCount = parseInt(countResult.rows[0].count, 10);
+      if (currentCount >= capacityLimit) {
+        res.status(403).json({
+          error: `Student limit reached (${capacityLimit}). Upgrade your Student Capacity plan in the Marketplace to add more students.`,
+          code: 'CAPACITY_LIMIT_REACHED',
+        });
+        return;
+      }
     }
 
     // Insert student into database

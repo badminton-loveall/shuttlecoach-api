@@ -199,6 +199,48 @@ export const rejectSet = async (req: AuthRequest, res: Response): Promise<void> 
 };
 
 /**
+ * POST /api/admin/drill-sets/:id/reset-to-draft
+ * published|rejected -> draft, so a coach can rework and resubmit it (the
+ * only path back to editable for a rejected set, since coach-side mutators
+ * require status='draft'). Never applies to the official catalog
+ * (is_official=true), which has no approve/reject workflow and is always
+ * 'published' by design. Cascades: any enabled marketplace_items rows tied
+ * to this set are disabled too, since content back in draft has nothing
+ * approved to sell.
+ */
+export const resetSetToDraft = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+
+    const result = await query(
+      `UPDATE drill_sets
+       SET status = 'draft', reviewed_by = NULL, reviewed_at = NULL,
+           rejection_reason = NULL, updated_at = NOW()
+       WHERE id = $1 AND status IN ('published', 'rejected')
+         AND is_archived = false AND is_official = false
+       RETURNING *`,
+      [id]
+    );
+
+    if (result.rowCount === 0) {
+      res.status(409).json({ error: 'Set cannot be reset to draft in its current state' });
+      return;
+    }
+
+    await query(
+      `UPDATE marketplace_items SET is_enabled = false, updated_at = NOW()
+       WHERE drill_set_id = $1 AND is_enabled = true`,
+      [id]
+    );
+
+    res.status(200).json(mapSetRow(result.rows[0]));
+  } catch (error) {
+    console.error('Reset set to draft error:', error);
+    res.status(500).json({ error: 'An error occurred while resetting the set to draft' });
+  }
+};
+
+/**
  * Verifies the target set is the admin-curated official catalog (is_official).
  * Admin editing is intentionally restricted to official sets only — mutating
  * a coach's already-published content directly would bypass their ownership

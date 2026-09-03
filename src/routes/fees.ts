@@ -3,6 +3,7 @@ import { authenticate, authorize } from '../middleware/auth';
 import { centerActive } from '../middleware/centerActive';
 import { tenantScope } from '../middleware/tenantScope';
 import { requireFeeAccess } from '../middleware/feeAccess';
+import { requireAccountingSubscription } from '../middleware/requireAccountingSubscription';
 import {
   createFee,
   listFees,
@@ -27,6 +28,9 @@ router.use(authenticate);
 router.use(centerActive);
 router.use(tenantScope);
 router.use(requireFeeAccess);
+// Coach-facing Finance menu is gated behind an active Accounting Section
+// subscription — STUDENT (viewing their own fees) passes through untouched.
+router.use(requireAccountingSubscription);
 
 /**
  * POST /api/fees
