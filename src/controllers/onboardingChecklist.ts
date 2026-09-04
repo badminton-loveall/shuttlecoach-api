@@ -27,7 +27,7 @@ const ITEM_LABELS: Record<string, string> = {
 const ITEM_LINKS: Record<string, string> = {
   add_coach: '/coaches',
   create_batch: '/batch-timings',
-  setup_curriculum: '/curriculum',
+  setup_curriculum: '/courses',
   add_students: '/students',
 };
 

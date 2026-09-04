@@ -48,6 +48,25 @@ export function computeProjectedEndDate(startDate: Date, weekCount: number): str
   return schedule[schedule.length - 1].scheduledEnd;
 }
 
+/**
+ * Ensures a coach is recorded as assigned to a batch whenever a student's
+ * enrollment (or a direct student edit) sets both together — idempotent via
+ * the (batch_id, coach_id) unique constraint, and always as 'assistant_coach'
+ * since a batch may already have a different head_coach (only one allowed).
+ */
+export async function ensureCoachAssignedToBatch(
+  batchId: string | null,
+  coachId: string | null
+): Promise<void> {
+  if (!batchId || !coachId) return;
+  await query(
+    `INSERT INTO batch_coach_assignments (batch_id, coach_id, role)
+     VALUES ($1, $2, 'assistant_coach')
+     ON CONFLICT (batch_id, coach_id) DO NOTHING`,
+    [batchId, coachId]
+  );
+}
+
 interface CreateEnrollmentParams {
   studentId: string;
   batchTimeTemplateId?: string | null;
@@ -132,8 +151,31 @@ export async function createEnrollment(params: CreateEnrollmentParams) {
       [batchTimeTemplateId]
     );
     resolvedBatchId = batchResult.rows[0]?.id ?? null;
+
+    // Batch Time Templates is the only "batch" concept a coach manages directly —
+    // the underlying `batches` row is an internal instance that attendance, session
+    // scheduling, and coach assignment all key off of. Rather than leaving the
+    // student's batch_id null just because nobody has created that row yet, create
+    // it the first time a template is actually enrolled into.
+    if (!resolvedBatchId && centerId) {
+      const templateResult = await query(
+        `SELECT name FROM batch_time_templates WHERE id = $1`,
+        [batchTimeTemplateId]
+      );
+      const templateName = templateResult.rows[0]?.name ?? 'Batch';
+      const createdBatch = await query(
+        `INSERT INTO batches (name, template_id, center_id) VALUES ($1, $2, $3) RETURNING id`,
+        [templateName, batchTimeTemplateId, centerId]
+      );
+      resolvedBatchId = createdBatch.rows[0].id;
+    }
   }
   await query(`UPDATE students SET batch_id = $1 WHERE id = $2`, [resolvedBatchId, studentId]);
+
+  // A student's coach selection should make that coach "assigned" to the batch
+  // everywhere that's displayed (the Coaches page's batch count, a coach's
+  // overview panel, etc.) — not just recorded on the student record.
+  await ensureCoachAssignedToBatch(resolvedBatchId, coachId);
 
   if (curriculumId && weeks.length > 0) {
     const numberedWeeks = weeks.map((week, index) => ({ ...week, weekNumber: index + 1 }));

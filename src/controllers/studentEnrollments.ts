@@ -208,7 +208,9 @@ function mapEnrollment(row: any) {
     coachId: row.coach_id,
     startDate: formatDateLocal(row.start_date),
     projectedEndDate: formatDateLocal(row.projected_end_date),
-    monthlyFee: row.monthly_fee,
+    // pg returns NUMERIC columns as strings — coerce so the client (and a later PATCH/POST
+    // round-trip of this same value through createEnrollmentSchema's z.number()) doesn't choke.
+    monthlyFee: row.monthly_fee !== null && row.monthly_fee !== undefined ? Number(row.monthly_fee) : null,
     status: row.status,
     isBackfilled: row.is_backfilled,
     createdAt: row.created_at,

@@ -5,6 +5,7 @@ import { AuthRequest } from '../../middleware/auth';
 import { validateSlug, generateSlug } from '../../utils/slug';
 import { generateResetToken, hashToken } from '../../utils/tokenGenerator';
 import { sendCenterWelcomeEmail } from '../../services/welcomeEmailService';
+import { activateSubscription } from '../../services/subscriptionService';
 
 /**
  * GET /api/admin/centers
@@ -110,6 +111,23 @@ export const createCenter = async (
       );
     } catch (checklistError) {
       console.error(`[CreateCenter] Failed to create onboarding checklist for center ${center.id}:`, checklistError);
+    }
+
+    // Every free (₹0) marketplace item — permanent baselines like "2 Coaches"
+    // and "2 Students", and free trials like the Accounting Section — activates
+    // automatically for a brand-new center, so it opens already able to add its
+    // first coaches/students and try Accounting, with no manual "Enable" step.
+    // Paid items still require a request/admin activation. Attributed to the
+    // admin creating the center, since there may not be a head coach yet.
+    try {
+      const freeItems = await query(
+        `SELECT id FROM marketplace_items WHERE price = 0 AND is_enabled = true`
+      );
+      for (const item of freeItems.rows) {
+        await activateSubscription(center.id, item.id, req.user!.id);
+      }
+    } catch (freeItemsError) {
+      console.error(`[CreateCenter] Failed to auto-activate free marketplace items for center ${center.id}:`, freeItemsError);
     }
 
     // Auto-create center owner account from contactEmail and send welcome email.

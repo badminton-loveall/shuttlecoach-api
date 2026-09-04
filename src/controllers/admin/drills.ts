@@ -36,14 +36,15 @@ export const listGlobalDrills = async (
     }
 
     const result = await query(
-      `SELECT id, name, description, category, sport, is_archived, created_at, updated_at
+      `SELECT id, name, description, category, sport, is_archived, video_url, created_at, updated_at
        FROM drills
        WHERE ${conditions.join(' AND ')}
        ORDER BY category, name`,
       params
     );
 
-    res.status(200).json({ drills: result.rows });
+    const drills = result.rows.map(({ video_url, ...row }) => ({ ...row, videoUrl: video_url }));
+    res.status(200).json({ drills });
   } catch (error) {
     console.error('List global drills error:', error);
     res.status(500).json({
@@ -61,16 +62,17 @@ export const createGlobalDrill = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { name, description, category, sport } = req.body;
+    const { name, description, category, sport, videoUrl } = req.body;
 
     const result = await query(
-      `INSERT INTO drills (name, description, category, sport, center_id)
-       VALUES ($1, $2, $3, $4, NULL)
-       RETURNING id, name, description, category, sport, center_id, is_archived, created_at, updated_at`,
-      [name, description, category, sport]
+      `INSERT INTO drills (name, description, category, sport, center_id, video_url)
+       VALUES ($1, $2, $3, $4, NULL, $5)
+       RETURNING id, name, description, category, sport, center_id, is_archived, video_url, created_at, updated_at`,
+      [name, description, category, sport, videoUrl || null]
     );
 
-    res.status(201).json(result.rows[0]);
+    const { video_url, ...rest } = result.rows[0];
+    res.status(201).json({ ...rest, videoUrl: video_url });
   } catch (error) {
     console.error('Create global drill error:', error);
     res.status(500).json({
@@ -96,6 +98,7 @@ export const updateGlobalDrill = async (
       description: 'description',
       category: 'category',
       sport: 'sport',
+      videoUrl: 'video_url',
     };
 
     const updates: string[] = [];
@@ -105,7 +108,7 @@ export const updateGlobalDrill = async (
     Object.entries(allowedFields).forEach(([bodyKey, dbColumn]) => {
       if (req.body[bodyKey] !== undefined) {
         updates.push(`${dbColumn} = $${paramIndex}`);
-        params.push(req.body[bodyKey]);
+        params.push(bodyKey === 'videoUrl' ? (req.body[bodyKey] || null) : req.body[bodyKey]);
         paramIndex++;
       }
     });
@@ -121,7 +124,7 @@ export const updateGlobalDrill = async (
       `UPDATE drills
        SET ${updates.join(', ')}
        WHERE id = $${paramIndex} AND center_id IS NULL AND is_archived = false
-       RETURNING id, name, description, category, sport, center_id, is_archived, created_at, updated_at`,
+       RETURNING id, name, description, category, sport, center_id, is_archived, video_url, created_at, updated_at`,
       params
     );
 
@@ -130,7 +133,8 @@ export const updateGlobalDrill = async (
       return;
     }
 
-    res.status(200).json(result.rows[0]);
+    const { video_url, ...rest } = result.rows[0];
+    res.status(200).json({ ...rest, videoUrl: video_url });
   } catch (error) {
     console.error('Update global drill error:', error);
     res.status(500).json({

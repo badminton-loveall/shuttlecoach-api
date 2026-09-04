@@ -34,6 +34,7 @@ function mapDrillRow(row: any) {
     description: row.description,
     category: row.category,
     sport: row.sport,
+    videoUrl: row.video_url,
   };
 }
 

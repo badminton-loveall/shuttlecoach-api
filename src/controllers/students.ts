@@ -9,6 +9,7 @@ import { generateResetToken, hashToken } from '../utils/tokenGenerator';
 import { sendStudentWelcomeEmail } from '../services/welcomeEmailService';
 import { autoCloneStudentPlan } from '../services/curriculumCloneService';
 import { getEffectiveCapacity } from '../services/subscriptionService';
+import { ensureCoachAssignedToBatch } from '../services/enrollmentService';
 
 /**
  * POST /api/students
@@ -126,6 +127,18 @@ export const createStudent = async (
           await autoCloneStudentPlan(student.id, batchId, req.tenantCenterId || null);
         } catch (err) {
           console.error('[CreateStudent] Auto-clone curriculum plan failed:', err);
+        }
+      });
+    }
+
+    // Fire-and-forget: a student's coach should be recorded as assigned to their
+    // batch too, so the Coaches page's batch count reflects this immediately.
+    if (batchId && assignedCoachId) {
+      setImmediate(async () => {
+        try {
+          await ensureCoachAssignedToBatch(batchId, assignedCoachId);
+        } catch (err) {
+          console.error('[CreateStudent] Failed to ensure coach-batch assignment:', err);
         }
       });
     }
@@ -594,6 +607,19 @@ export const updateStudent = async (
           await autoCloneStudentPlan(studentId, newBatchId, req.tenantCenterId || null);
         } catch (err) {
           console.error('[UpdateStudent] Auto-clone curriculum plan failed:', err);
+        }
+      });
+    }
+
+    // Fire-and-forget: keep the coach recorded as assigned to the student's (possibly
+    // just-updated) batch — uses the row's own effective values, not just what this
+    // particular PATCH touched, so setting only one of the two still checks out right.
+    if (student.batchId && student.assignedCoachId) {
+      setImmediate(async () => {
+        try {
+          await ensureCoachAssignedToBatch(student.batchId!, student.assignedCoachId!);
+        } catch (err) {
+          console.error('[UpdateStudent] Failed to ensure coach-batch assignment:', err);
         }
       });
     }

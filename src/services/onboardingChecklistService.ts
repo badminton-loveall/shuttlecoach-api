@@ -53,6 +53,7 @@ export async function evaluateChecklistItems(
       (SELECT COUNT(*) FROM users WHERE center_id = $1 AND role IN ('ASSISTANT_COACH', 'HEAD_COACH') AND id != $2) AS coach_count,
       (SELECT COUNT(*) FROM students WHERE center_id = $1) AS student_count,
       (SELECT COUNT(*) FROM curriculum_plans WHERE center_id = $1) AS curriculum_count,
+      (SELECT COUNT(*) FROM courses WHERE center_id = $1) AS course_count,
       (SELECT COUNT(*) FROM batch_time_templates WHERE center_id = $1) AS template_count`,
     [centerId, headCoachId]
   );
@@ -62,7 +63,13 @@ export async function evaluateChecklistItems(
   const counts: Record<string, number> = {
     add_coach: parseInt(row.coach_count, 10),
     add_students: parseInt(row.student_count, 10),
-    setup_curriculum: parseInt(row.curriculum_count, 10),
+    // The "Curriculum" card links to /courses, whose primary action only
+    // creates a course template (courses row) — a curriculum_plans row isn't
+    // written until that template is separately attached to a batch. Coaches
+    // reasonably consider the step done once they've built a course, so
+    // either satisfies this item rather than silently requiring the
+    // unlinked attach step too.
+    setup_curriculum: parseInt(row.curriculum_count, 10) + parseInt(row.course_count, 10),
     create_batch: parseInt(row.template_count, 10),
   };
 

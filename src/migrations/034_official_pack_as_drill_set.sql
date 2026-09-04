@@ -35,7 +35,7 @@ ALTER TABLE centers DROP COLUMN IF EXISTS official_pack_enabled;
 -- ============================================================================
 
 INSERT INTO centers (id, name, slug, is_active, sport, marketplace_enabled, is_system)
-VALUES ('00000000-0000-0000-0000-000000000001', 'LoveAll Platform', 'loveall-platform', true, 'badminton', true, true)
+VALUES ('616aad3e-3178-461f-a073-1adbdf61cdab', 'LoveAll Platform', 'loveall-platform', true, 'badminton', true, true)
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================================
@@ -66,7 +66,7 @@ BEGIN
     'Badminton Drills Pack',
     'The complete official badminton drill catalog, ready for any center to adopt.',
     'badminton',
-    '00000000-0000-0000-0000-000000000001',
+    '616aad3e-3178-461f-a073-1adbdf61cdab',
     admin_id,
     'published',
     NOW(),

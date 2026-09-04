@@ -269,6 +269,13 @@ async function getCycleStartDate(batchId: string): Promise<Date | null> {
 /**
  * Fetch the curriculum plan weeks owned by a specific student (the per-student journey system).
  * Returns the most recent non-archived plan for that student.
+ *
+ * Falls back to the course template's own weeks (via the student's active enrollment's
+ * curriculum_id) when no student-owned plan has been generated yet. This happens whenever an
+ * enrollment ends up with a curriculum_id but no matching curriculum_plans row — e.g. the course
+ * had no weeks defined yet at the moment the student was enrolled into it, so createEnrollment's
+ * plan-seeding step had nothing to copy. Without this fallback the calendar shows no session
+ * dates at all for that student even though the enrollment is fully set up.
  */
 async function getCurriculumWeeksForStudent(
   studentId: string
@@ -281,16 +288,42 @@ async function getCurriculumWeeksForStudent(
     [studentId]
   );
 
-  if (result.rows.length === 0) {
+  if (result.rows.length > 0) {
+    const weeks = typeof result.rows[0].weeks === 'string'
+      ? JSON.parse(result.rows[0].weeks)
+      : result.rows[0].weeks;
+
+    return weeks.map((w: any) => ({
+      weekNumber: w.weekNumber,
+      focusArea: w.focusArea || '',
+      drills: (w.drills || []).map((d: any) => ({
+        name: d.name,
+        category: d.category,
+      })),
+    }));
+  }
+
+  const courseResult = await query(
+    `SELECT c.weeks FROM courses c
+     JOIN student_enrollments e ON e.curriculum_id = c.id
+     WHERE e.student_id = $1 AND e.status = 'active'`,
+    [studentId]
+  );
+
+  if (courseResult.rows.length === 0) {
     return null;
   }
 
-  const weeks = typeof result.rows[0].weeks === 'string'
-    ? JSON.parse(result.rows[0].weeks)
-    : result.rows[0].weeks;
+  const courseWeeks = typeof courseResult.rows[0].weeks === 'string'
+    ? JSON.parse(courseResult.rows[0].weeks)
+    : courseResult.rows[0].weeks;
 
-  return weeks.map((w: any) => ({
-    weekNumber: w.weekNumber,
+  if (!Array.isArray(courseWeeks) || courseWeeks.length === 0) {
+    return null;
+  }
+
+  return courseWeeks.map((w: any, index: number) => ({
+    weekNumber: w.weekNumber ?? index + 1,
     focusArea: w.focusArea || '',
     drills: (w.drills || []).map((d: any) => ({
       name: d.name,

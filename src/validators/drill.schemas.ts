@@ -2,11 +2,16 @@ import { z } from 'zod';
 
 export const sportSchema = z.enum(['badminton', 'tennis', 'table_tennis', 'squash']);
 
+const videoUrlSchema = z.string().trim().max(2048, 'URL must be at most 2048 characters')
+  .refine((v) => !v || /^https?:\/\//i.test(v), 'Must be a valid URL')
+  .optional();
+
 export const createDrillSchema = z.object({
   name: z.string().min(1, 'Name is required').max(100, 'Name must be at most 100 characters'),
   description: z.string().min(1, 'Description is required').max(1000, 'Description must be at most 1000 characters'),
   category: z.string().min(1, 'Category is required').max(50, 'Category must be at most 50 characters'),
   sport: sportSchema,
+  videoUrl: videoUrlSchema,
 });
 
 export const updateDrillSchema = z.object({
@@ -14,6 +19,7 @@ export const updateDrillSchema = z.object({
   description: z.string().min(1, 'Description is required').max(1000, 'Description must be at most 1000 characters').optional(),
   category: z.string().min(1, 'Category is required').max(50, 'Category must be at most 50 characters').optional(),
   sport: sportSchema.optional(),
+  videoUrl: videoUrlSchema,
 }).strict();
 
 export const createGlobalDrillSchema = z.object({
@@ -21,6 +27,7 @@ export const createGlobalDrillSchema = z.object({
   description: z.string().min(1, 'Description is required').max(1000, 'Description must be at most 1000 characters'),
   category: z.string().min(1, 'Category is required').max(50, 'Category must be at most 50 characters'),
   sport: sportSchema,
+  videoUrl: videoUrlSchema,
 });
 
 export const adoptDrillSchema = z.object({
