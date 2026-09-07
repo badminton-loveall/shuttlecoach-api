@@ -49,6 +49,19 @@ export const createAssessmentSchema = z.object({
 });
 
 /**
+ * Validation schema for updating a skill assessment (PATCH /api/assessments/:id).
+ * The controller only ever reads `scores` from the body — id comes from the
+ * URL param, cycleKey/studentId are looked up from the existing row, and
+ * recordedBy is derived from the authenticated user — so this must NOT
+ * require studentId/cycleKey/recordedBy the way createAssessmentSchema does,
+ * or every edit to an existing assessment fails validation before it even
+ * reaches the controller.
+ */
+export const updateAssessmentSchema = z.object({
+  scores: skillScoresSchema,
+});
+
+/**
  * Validation schema for query parameters when listing assessments
  */
 export const listAssessmentsQuerySchema = z.object({
@@ -60,4 +73,5 @@ export const listAssessmentsQuerySchema = z.object({
 });
 
 export type CreateAssessmentInput = z.infer<typeof createAssessmentSchema>;
+export type UpdateAssessmentInput = z.infer<typeof updateAssessmentSchema>;
 export type ListAssessmentsQuery = z.infer<typeof listAssessmentsQuerySchema>;

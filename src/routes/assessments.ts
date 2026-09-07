@@ -12,6 +12,7 @@ import { UserRole } from '../types';
 import { validateRequest, validateQuery } from '../middleware/validation';
 import {
   createAssessmentSchema,
+  updateAssessmentSchema,
   listAssessmentsQuerySchema,
 } from '../validators/assessment.schemas';
 
@@ -68,7 +69,7 @@ router.get(
 router.patch(
   '/:id',
   authorize(UserRole.HEAD_COACH, UserRole.ASSISTANT_COACH),
-  validateRequest(createAssessmentSchema),
+  validateRequest(updateAssessmentSchema),
   updateAssessment
 );
 

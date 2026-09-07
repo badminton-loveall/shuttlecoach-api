@@ -137,10 +137,17 @@ export const forgotPassword = async (
     // Always return same response regardless of email existence
     const successResponse = { message: 'If an account with that email exists, a password reset link has been sent.' };
 
-    // Look up user by email
+    // Look up user by email, case-insensitively — matches how every other
+    // email lookup in this codebase works (coaches.ts, students.ts,
+    // admin/centers.ts, admin/coachActions.ts all use LOWER(email)).
+    // An exact-case match here silently misses accounts whose stored email
+    // casing differs from what the person typed, and because this endpoint
+    // always returns the same generic success message (by design, to avoid
+    // leaking which emails are registered), that miss is invisible — it
+    // just looks like "the email never arrived."
     const userResult = await query(
-      'SELECT id, name, email FROM users WHERE email = $1',
-      [email]
+      'SELECT id, name, email FROM users WHERE LOWER(email) = LOWER($1)',
+      [typeof email === 'string' ? email.trim() : email]
     );
 
     if (userResult.rows.length === 0) {
