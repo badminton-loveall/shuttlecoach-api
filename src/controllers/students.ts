@@ -118,47 +118,26 @@ export const createStudent = async (
     );
 
     const student = mapDatabaseRowToStudent(result.rows[0]);
-    res.status(201).json(student);
 
-    // Fire-and-forget: auto-clone curriculum plan if student is added to a batch with a course
-    if (batchId && student.id) {
-      setImmediate(async () => {
-        try {
-          await autoCloneStudentPlan(student.id, batchId, req.tenantCenterId || null);
-        } catch (err) {
-          console.error('[CreateStudent] Auto-clone curriculum plan failed:', err);
-        }
-      });
-    }
-
-    // Fire-and-forget: a student's coach should be recorded as assigned to their
-    // batch too, so the Coaches page's batch count reflects this immediately.
-    if (batchId && assignedCoachId) {
-      setImmediate(async () => {
-        try {
-          await ensureCoachAssignedToBatch(batchId, assignedCoachId);
-        } catch (err) {
-          console.error('[CreateStudent] Failed to ensure coach-batch assignment:', err);
-        }
-      });
-    }
-
-    // Fire-and-forget: create a login account and send the student welcome email
-    // if an email address was provided.
+    // Create the student's login account and send the welcome email *before*
+    // responding — this used to run via setImmediate() after res.json(), but
+    // on Vercel's serverless runtime the function can freeze as soon as the
+    // response flushes, so that deferred callback (including the account
+    // creation itself, not just the email) was never guaranteed to run. When
+    // it didn't, the student had no login account at all — not just a missing
+    // email — which is a much worse silent failure than a dropped email.
+    // Matches the pattern already used for center creation in admin/centers.ts.
     if (email && req.tenantCenterId) {
-      setImmediate(async () => {
-        try {
-          // Look up center name and contact info
-          const centerResult = await query(
-            'SELECT name, contact_email, contact_phone FROM centers WHERE id = $1',
-            [req.tenantCenterId]
-          );
+      try {
+        // Look up center name and contact info
+        const centerResult = await query(
+          'SELECT name, contact_email, contact_phone FROM centers WHERE id = $1',
+          [req.tenantCenterId]
+        );
 
-          if (centerResult.rows.length === 0) {
-            console.warn(`[CreateStudent] Center ${req.tenantCenterId} not found for welcome email.`);
-            return;
-          }
-
+        if (centerResult.rows.length === 0) {
+          console.warn(`[CreateStudent] Center ${req.tenantCenterId} not found for welcome email.`);
+        } else {
           const center = centerResult.rows[0];
           const centerName = center.name;
 
@@ -201,58 +180,84 @@ export const createStudent = async (
             console.warn(
               `[CreateStudent] Email ${email} is already tied to a different user account (${existingUser.rows[0].id}). Skipping login creation for student ${student.id}.`
             );
-            return;
-          }
+          } else {
+            if (existingUser.rows.length === 0) {
+              const randomPassword = crypto.randomBytes(16).toString('hex');
+              const passwordHash = await hashPassword(randomPassword);
+              await query(
+                `INSERT INTO users (id, username, password_hash, role, name, email, center_id, created_at, last_active)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+                [student.id, email, passwordHash, UserRole.STUDENT, fullName, email, req.tenantCenterId]
+              );
+            }
 
-          if (existingUser.rows.length === 0) {
-            const randomPassword = crypto.randomBytes(16).toString('hex');
-            const passwordHash = await hashPassword(randomPassword);
+            const studentUserId = student.id;
+
             await query(
-              `INSERT INTO users (id, username, password_hash, role, name, email, center_id, created_at, last_active)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-              [student.id, email, passwordHash, UserRole.STUDENT, fullName, email, req.tenantCenterId]
+              `INSERT INTO user_center_memberships (user_id, center_id, role)
+               VALUES ($1, $2, 'STUDENT')
+               ON CONFLICT (user_id, center_id, role) DO NOTHING`,
+              [studentUserId, req.tenantCenterId]
             );
+
+            // Generate a 24-hour password-set token
+            const rawToken = generateResetToken();
+            const tokenHash = hashToken(rawToken);
+            const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+            await query('DELETE FROM password_reset_tokens WHERE user_id = $1', [studentUserId]);
+            await query(
+              'INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
+              [studentUserId, tokenHash, expiresAt.toISOString()]
+            );
+
+            const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+            const resetLink = `${frontendUrl}/reset-password?token=${rawToken}`;
+            const loginUrl = `${frontendUrl}/login`;
+
+            await sendStudentWelcomeEmail({
+              studentEmail: email,
+              studentName: fullName,
+              studentUsername: email,
+              resetLink,
+              loginUrl,
+              centerName,
+              batchName,
+              centerContactInfo,
+              guardianName: guardianName || undefined,
+              isMinor,
+              centerId: req.tenantCenterId,
+            });
           }
+        }
+      } catch (emailError) {
+        // Log but don't fail the request — the student record was created;
+        // an admin can retry login-account creation / resend the invite.
+        console.error(`[CreateStudent] Failed to create login account / send welcome email:`, emailError);
+      }
+    }
 
-          const studentUserId = student.id;
+    res.status(201).json(student);
 
-          await query(
-            `INSERT INTO user_center_memberships (user_id, center_id, role)
-             VALUES ($1, $2, 'STUDENT')
-             ON CONFLICT (user_id, center_id, role) DO NOTHING`,
-            [studentUserId, req.tenantCenterId]
-          );
+    // Fire-and-forget: auto-clone curriculum plan if student is added to a batch with a course
+    if (batchId && student.id) {
+      setImmediate(async () => {
+        try {
+          await autoCloneStudentPlan(student.id, batchId, req.tenantCenterId || null);
+        } catch (err) {
+          console.error('[CreateStudent] Auto-clone curriculum plan failed:', err);
+        }
+      });
+    }
 
-          // Generate a 24-hour password-set token
-          const rawToken = generateResetToken();
-          const tokenHash = hashToken(rawToken);
-          const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-
-          await query('DELETE FROM password_reset_tokens WHERE user_id = $1', [studentUserId]);
-          await query(
-            'INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
-            [studentUserId, tokenHash, expiresAt.toISOString()]
-          );
-
-          const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-          const resetLink = `${frontendUrl}/reset-password?token=${rawToken}`;
-          const loginUrl = `${frontendUrl}/login`;
-
-          sendStudentWelcomeEmail({
-            studentEmail: email,
-            studentName: fullName,
-            studentUsername: email,
-            resetLink,
-            loginUrl,
-            centerName,
-            batchName,
-            centerContactInfo,
-            guardianName: guardianName || undefined,
-            isMinor,
-            centerId: req.tenantCenterId,
-          });
-        } catch (emailError) {
-          console.error(`[CreateStudent] Failed to create login account / send welcome email:`, emailError);
+    // Fire-and-forget: a student's coach should be recorded as assigned to their
+    // batch too, so the Coaches page's batch count reflects this immediately.
+    if (batchId && assignedCoachId) {
+      setImmediate(async () => {
+        try {
+          await ensureCoachAssignedToBatch(batchId, assignedCoachId);
+        } catch (err) {
+          console.error('[CreateStudent] Failed to ensure coach-batch assignment:', err);
         }
       });
     }

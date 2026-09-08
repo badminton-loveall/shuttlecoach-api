@@ -177,6 +177,65 @@ export const createCoach = async (
     // the account to ever be usable, so it's awaited here rather than fired-and-forgotten.
     await createMembership(coach.id, req.tenantCenterId!, assignedRole);
 
+    // Welcome email if coach has an email address. Awaited *before* the
+    // response is sent — same reasoning as createMembership above: this used
+    // to be fired via setImmediate() after res.json(), but on Vercel's
+    // serverless runtime the function can freeze as soon as the response
+    // flushes, so that deferred callback (and the un-awaited send inside it)
+    // was never guaranteed to actually run. A coach with no password (the
+    // common case — one wasn't provided, so a random unguessable hash was
+    // set above) has no way in without this email, so silently dropping it
+    // left the account effectively locked out with no visible error. Matches
+    // the pattern already used for center creation in admin/centers.ts.
+    if (email) {
+      try {
+        // Generate password reset token
+        const rawToken = generateResetToken();
+        const tokenHash = hashToken(rawToken);
+        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+        // Invalidate existing tokens for this user
+        await query('DELETE FROM password_reset_tokens WHERE user_id = $1', [coach.id]);
+
+        // Store hashed token
+        await query(
+          'INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
+          [coach.id, tokenHash, expiresAt.toISOString()]
+        );
+
+        // Generate URLs
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+        const resetLink = `${frontendUrl}/reset-password?token=${rawToken}`;
+        const loginUrl = `${frontendUrl}/login`;
+
+        // Look up center name
+        let centerName = 'your center';
+        if (req.tenantCenterId) {
+          const centerResult = await query(
+            'SELECT name FROM centers WHERE id = $1',
+            [req.tenantCenterId]
+          );
+          if (centerResult.rows.length > 0) {
+            centerName = centerResult.rows[0].name;
+          }
+        }
+
+        await sendCoachWelcomeEmail({
+          coachEmail: email,
+          coachName: name,
+          coachUsername: username,
+          centerName,
+          resetLink,
+          loginUrl,
+          centerId: req.tenantCenterId || undefined,
+        });
+      } catch (emailError) {
+        // Log but don't fail the request — coach was created; admin can
+        // resend the invite (or set a password directly) if this failed.
+        console.error(`[CreateCoach] Failed to send welcome email for coach ${coach.id}:`, emailError);
+      }
+    }
+
     res.status(201).json({
       id: coach.id,
       username: coach.username,
@@ -197,56 +256,6 @@ export const createCoach = async (
       createdAt: coach.created_at,
       lastActive: coach.last_active,
     });
-
-    // Fire-and-forget welcome email if coach has an email address
-    if (email) {
-      setImmediate(async () => {
-        try {
-          // Generate password reset token
-          const rawToken = generateResetToken();
-          const tokenHash = hashToken(rawToken);
-          const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-
-          // Invalidate existing tokens for this user
-          await query('DELETE FROM password_reset_tokens WHERE user_id = $1', [coach.id]);
-
-          // Store hashed token
-          await query(
-            'INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
-            [coach.id, tokenHash, expiresAt.toISOString()]
-          );
-
-          // Generate URLs
-          const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-          const resetLink = `${frontendUrl}/reset-password?token=${rawToken}`;
-          const loginUrl = `${frontendUrl}/login`;
-
-          // Look up center name
-          let centerName = 'your center';
-          if (req.tenantCenterId) {
-            const centerResult = await query(
-              'SELECT name FROM centers WHERE id = $1',
-              [req.tenantCenterId]
-            );
-            if (centerResult.rows.length > 0) {
-              centerName = centerResult.rows[0].name;
-            }
-          }
-
-          sendCoachWelcomeEmail({
-            coachEmail: email,
-            coachName: name,
-            coachUsername: username,
-            centerName,
-            resetLink,
-            loginUrl,
-            centerId: req.tenantCenterId || undefined,
-          });
-        } catch (emailError) {
-          console.error(`[CreateCoach] Failed to send welcome email for coach ${coach.id}:`, emailError);
-        }
-      });
-    }
   } catch (error: unknown) {
     console.error('Create coach error:', error);
     
