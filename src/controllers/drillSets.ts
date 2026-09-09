@@ -245,7 +245,10 @@ export const updateSet = async (req: TenantRequest, res: Response): Promise<void
 
 /**
  * DELETE /api/drill-sets/:id
- * Archive (soft-delete) a set. Only while draft or rejected, owner only.
+ * Archive (soft-delete) a set — draft/rejected (still being authored) or
+ * pending_review (withdrawing a submission before admin decides). A
+ * published set must be unpublished first; deleting it directly isn't
+ * allowed so it always goes through that explicit, confirmed step.
  * Requires: HEAD_COACH or ASSISTANT_COACH (owner only)
  */
 export const deleteSet = async (req: TenantRequest, res: Response): Promise<void> => {
@@ -255,7 +258,8 @@ export const deleteSet = async (req: TenantRequest, res: Response): Promise<void
 
     const result = await query(
       `UPDATE drill_sets SET is_archived = true, updated_at = NOW()
-       WHERE id = $1 AND created_by = $2 AND is_archived = false AND status IN ('draft', 'rejected')
+       WHERE id = $1 AND created_by = $2 AND is_archived = false
+         AND status IN ('draft', 'rejected', 'pending_review')
        RETURNING id`,
       [id, userId]
     );
@@ -537,6 +541,47 @@ export const submitSet = async (req: TenantRequest, res: Response): Promise<void
   } catch (error) {
     console.error('Submit drill set error:', error);
     res.status(500).json({ error: 'An error occurred while submitting the set' });
+  }
+};
+
+/**
+ * POST /api/drill-sets/:id/unpublish
+ * Pull a published set back off the marketplace, reverting it to draft so the
+ * owner can edit and resubmit it later. Centers that already adopted this set
+ * keep their own independent copy — adoption always copies rather than links,
+ * so nothing downstream is affected.
+ * Requires: HEAD_COACH or ASSISTANT_COACH (owner only)
+ */
+export const unpublishSet = async (req: TenantRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const userId = req.user!.id;
+
+    const result = await query(
+      `UPDATE drill_sets
+       SET status = 'draft', submitted_at = NULL, updated_at = NOW()
+       WHERE id = $1 AND created_by = $2 AND is_archived = false AND status = 'published'
+       RETURNING *`,
+      [id, userId]
+    );
+
+    if (result.rowCount === 0) {
+      const existsResult = await query(
+        `SELECT status FROM drill_sets WHERE id = $1 AND created_by = $2 AND is_archived = false`,
+        [id, userId]
+      );
+      if (existsResult.rowCount === 0) {
+        res.status(404).json({ error: 'Set not found' });
+      } else {
+        res.status(409).json({ error: 'Only a published set can be unpublished' });
+      }
+      return;
+    }
+
+    res.status(200).json(mapSetRow(result.rows[0]));
+  } catch (error) {
+    console.error('Unpublish drill set error:', error);
+    res.status(500).json({ error: 'An error occurred while unpublishing the set' });
   }
 };
 

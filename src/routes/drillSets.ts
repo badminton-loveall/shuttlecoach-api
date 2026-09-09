@@ -17,6 +17,7 @@ import {
   addDrillToSetCategory,
   removeDrillFromSetCategory,
   submitSet,
+  unpublishSet,
   listMarketplaceSets,
   getMarketplaceSetDetail,
   adoptSet,
@@ -165,5 +166,12 @@ router.delete(
  * Submit a draft set for admin review.
  */
 router.post('/:id/submit', authorize(...COACH_ROLES), submitSet);
+
+/**
+ * POST /api/drill-sets/:id/unpublish
+ * Pull a published set back off the marketplace (owner only), reverting it
+ * to draft so it can be edited and resubmitted.
+ */
+router.post('/:id/unpublish', authorize(...COACH_ROLES), unpublishSet);
 
 export default router;
