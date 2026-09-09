@@ -4,6 +4,16 @@ interface SendResetEmailParams {
   to: string;
   resetLink: string;
   userName: string;
+  /**
+   * When true, re-throws the SMTP error after logging it instead of
+   * swallowing it. The public forgot-password endpoint needs this to always
+   * resolve silently (an error here could otherwise leak, via timing or a
+   * different response shape, whether an email is registered). An
+   * authenticated admin action calling this for one specific, already-visible
+   * account has no such concern and wants the real failure back. Defaults to
+   * false so every existing caller keeps today's silent-on-failure behavior.
+   */
+  rethrowOnError?: boolean;
 }
 
 function createTransporter() {
@@ -29,6 +39,7 @@ export async function sendPasswordResetEmail({
   to,
   resetLink,
   userName,
+  rethrowOnError = false,
 }: SendResetEmailParams): Promise<void> {
   try {
     const transporter = createTransporter();
@@ -59,6 +70,9 @@ export async function sendPasswordResetEmail({
     console.log(`[EmailService] Password reset sent to:${to} messageId:${info.messageId}`);
   } catch (error: any) {
     console.error(`[EmailService] Failed to send password reset — code:${error.code} response:${error.response} message:${error.message}`);
-    // Intentionally swallowed — do not throw to prevent enumeration leaks
+    if (rethrowOnError) {
+      throw error;
+    }
+    // Otherwise intentionally swallowed — do not throw to prevent enumeration leaks
   }
 }

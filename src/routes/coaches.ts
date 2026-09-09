@@ -3,7 +3,7 @@ import { authenticate, authorize } from '../middleware/auth';
 import { centerActive } from '../middleware/centerActive';
 import { tenantScope } from '../middleware/tenantScope';
 import { createCoach, listCoaches, assignCoach, toggleFeeAccess, updateCoach, getCoach, deleteCoach } from '../controllers/coaches';
-import { adminResetPassword } from '../controllers/password';
+import { adminResetPassword, sendCoachResetEmail } from '../controllers/password';
 import { UserRole } from '../types';
 import { validateRequest } from '../middleware/validation';
 import { createCoachSchema, assignCoachSchema } from '../validators/coach.schemas';
@@ -62,6 +62,13 @@ router.delete('/:id', authorize(UserRole.HEAD_COACH), deleteCoach);
  * POST /api/coaches/:id/reset-password
  * Reset a coach's password (HEAD_COACH or ADMIN only)
  */
-router.post('/:id/reset-password', authorize(UserRole.HEAD_COACH), validateRequest(adminResetPasswordSchema), adminResetPassword);
+router.post('/:id/reset-password', authorize(UserRole.ADMIN, UserRole.HEAD_COACH), validateRequest(adminResetPasswordSchema), adminResetPassword);
+
+/**
+ * POST /api/coaches/:id/send-reset-email
+ * Admin/HEAD_COACH triggers a password-reset email to the coach instead of
+ * setting a password manually.
+ */
+router.post('/:id/send-reset-email', authorize(UserRole.ADMIN, UserRole.HEAD_COACH), sendCoachResetEmail);
 
 export default router;
