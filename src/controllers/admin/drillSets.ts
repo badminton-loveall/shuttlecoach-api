@@ -262,6 +262,95 @@ async function requireOfficialSet(res: Response, setId: string | string[]) {
 }
 
 /**
+ * PATCH /api/admin/drill-sets/:id
+ * Rename the official catalog (or update its description/sport). Unlike
+ * the coach-side updateSet, this isn't gated to draft/rejected status or
+ * created_by — the official set has no owning coach and is always
+ * 'published'.
+ */
+export const updateOfficialSet = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+
+    if (!(await requireOfficialSet(res, id))) return;
+
+    const allowedFields: Record<string, string> = {
+      name: 'name',
+      description: 'description',
+      sport: 'sport',
+    };
+
+    const updates: string[] = [];
+    const params: any[] = [];
+    let paramIndex = 1;
+
+    Object.entries(allowedFields).forEach(([bodyKey, dbColumn]) => {
+      if (req.body[bodyKey] !== undefined) {
+        updates.push(`${dbColumn} = $${paramIndex}`);
+        params.push(req.body[bodyKey]);
+        paramIndex++;
+      }
+    });
+
+    if (updates.length === 0) {
+      res.status(400).json({ error: 'No valid fields to update' });
+      return;
+    }
+
+    updates.push('updated_at = NOW()');
+    params.push(id);
+
+    const result = await query(
+      `UPDATE drill_sets SET ${updates.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+      params
+    );
+
+    res.status(200).json(mapSetRow(result.rows[0]));
+  } catch (error) {
+    console.error('Update official set error:', error);
+    res.status(500).json({ error: 'An error occurred while updating the set' });
+  }
+};
+
+/**
+ * PATCH /api/admin/drill-sets/:id/categories/:categoryId
+ * Rename a category in the official catalog.
+ */
+export const updateOfficialSetCategory = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id, categoryId } = req.params;
+    const { name } = req.body;
+
+    if (!(await requireOfficialSet(res, id))) return;
+
+    const result = await query(
+      `UPDATE drill_set_categories SET name = $1, updated_at = NOW()
+       WHERE id = $2 AND set_id = $3
+       RETURNING *`,
+      [name, categoryId, id]
+    );
+
+    if (result.rowCount === 0) {
+      res.status(404).json({ error: 'Category not found in this set' });
+      return;
+    }
+
+    const row = result.rows[0];
+    res.status(200).json({
+      id: row.id,
+      setId: row.set_id,
+      name: row.name,
+      sortOrder: row.sort_order,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    });
+  } catch (error) {
+    console.error('Update official set category error:', error);
+    res.status(500).json({ error: 'An error occurred while updating the category' });
+  }
+};
+
+/**
  * POST /api/admin/drill-sets/:id/categories
  * Add a category to the official catalog. Unlike coach-owned sets, this
  * works regardless of status (the official set is always 'published').

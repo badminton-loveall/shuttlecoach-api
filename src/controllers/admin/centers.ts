@@ -149,11 +149,26 @@ export const createCenter = async (
           ownerId = existingOwner.rows[0].id;
           ownerName = existingOwner.rows[0].name || existingOwner.rows[0].username;
         } else {
+          // This form only collects a contact email, never the coach's own
+          // name — reusing the center's `name` here (both destructured from
+          // req.body as `name`, easy to conflate) was setting the coach's
+          // personal name to the center's name, so marketplace listings
+          // showed "by {center} · {center}". Derive a placeholder from the
+          // email's local part instead; the coach can correct it later from
+          // their own profile.
+          const placeholderName = ownerEmail
+            .split('@')[0]
+            .replace(/[._-]+/g, ' ')
+            .trim()
+            .split(' ')
+            .filter(Boolean)
+            .map((part: string) => part[0].toUpperCase() + part.slice(1))
+            .join(' ') || ownerEmail;
           const newUser = await query(
             `INSERT INTO users (username, email, password_hash, role, name, center_id, created_at, last_active)
              VALUES ($1, $2, '!', 'HEAD_COACH', $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
              RETURNING id, username, name`,
-            [ownerEmail, ownerEmail, name, center.id]
+            [ownerEmail, ownerEmail, placeholderName, center.id]
           );
           ownerId = newUser.rows[0].id;
           ownerName = newUser.rows[0].name || newUser.rows[0].username;

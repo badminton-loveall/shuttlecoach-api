@@ -546,10 +546,12 @@ export const submitSet = async (req: TenantRequest, res: Response): Promise<void
 
 /**
  * POST /api/drill-sets/:id/unpublish
- * Pull a published set back off the marketplace, reverting it to draft so the
- * owner can edit and resubmit it later. Centers that already adopted this set
- * keep their own independent copy — adoption always copies rather than links,
- * so nothing downstream is affected.
+ * Pull a set back to draft so the owner can edit and resubmit it later —
+ * either off the marketplace (published) or out of the review queue
+ * (pending_review, e.g. when the owner opens Edit on a submission that
+ * hasn't been decided on yet). Centers that already adopted a published set
+ * keep their own independent copy — adoption always copies rather than
+ * links, so nothing downstream is affected.
  * Requires: HEAD_COACH or ASSISTANT_COACH (owner only)
  */
 export const unpublishSet = async (req: TenantRequest, res: Response): Promise<void> => {
@@ -560,7 +562,7 @@ export const unpublishSet = async (req: TenantRequest, res: Response): Promise<v
     const result = await query(
       `UPDATE drill_sets
        SET status = 'draft', submitted_at = NULL, updated_at = NOW()
-       WHERE id = $1 AND created_by = $2 AND is_archived = false AND status = 'published'
+       WHERE id = $1 AND created_by = $2 AND is_archived = false AND status IN ('published', 'pending_review')
        RETURNING *`,
       [id, userId]
     );
@@ -573,7 +575,7 @@ export const unpublishSet = async (req: TenantRequest, res: Response): Promise<v
       if (existsResult.rowCount === 0) {
         res.status(404).json({ error: 'Set not found' });
       } else {
-        res.status(409).json({ error: 'Only a published set can be unpublished' });
+        res.status(409).json({ error: 'Only a published or pending-review set can be pulled back to draft' });
       }
       return;
     }

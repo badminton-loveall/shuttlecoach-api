@@ -29,6 +29,8 @@ import {
   approveSet,
   rejectSet,
   resetSetToDraft,
+  updateOfficialSet,
+  updateOfficialSetCategory,
   addOfficialSetCategory,
   deleteOfficialSetCategory,
   addOfficialSetDrill,
@@ -37,7 +39,9 @@ import {
 import {
   adminSetQuerySchema,
   rejectSetSchema,
+  updateDrillSetSchema,
   createSetCategorySchema,
+  updateSetCategorySchema,
   addDrillToSetCategorySchema,
 } from '../validators/drillSet.schemas';
 import { listMarketplaceItems, createMarketplaceItem, updateMarketplaceItem } from '../controllers/admin/marketplaceItems';
@@ -176,6 +180,12 @@ router.post('/drill-sets/:id/reject', validateRequest(rejectSetSchema), rejectSe
 router.post('/drill-sets/:id/reset-to-draft', resetSetToDraft);
 
 /**
+ * PATCH /api/admin/drill-sets/:id
+ * Rename the official catalog (or update description/sport).
+ */
+router.patch('/drill-sets/:id', validateRequest(updateDrillSetSchema), updateOfficialSet);
+
+/**
  * POST /api/admin/drill-sets/:id/categories
  * Add a category to the official catalog (Badminton Drills Pack).
  */
@@ -183,6 +193,16 @@ router.post(
   '/drill-sets/:id/categories',
   validateRequest(createSetCategorySchema),
   addOfficialSetCategory
+);
+
+/**
+ * PATCH /api/admin/drill-sets/:id/categories/:categoryId
+ * Rename a category in the official catalog.
+ */
+router.patch(
+  '/drill-sets/:id/categories/:categoryId',
+  validateRequest(updateSetCategorySchema),
+  updateOfficialSetCategory
 );
 
 /**
