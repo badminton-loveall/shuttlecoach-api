@@ -838,6 +838,39 @@ export interface CenterSubscription {
   centerName?: string;
 }
 
+export type CoachRoyaltyStatus = 'PENDING' | 'PAID';
+
+export interface CoachRoyalty {
+  id: string;
+  centerSubscriptionId: string;
+  drillSetId: string;
+  coachUserId: string;
+  purchasingCenterId: string;
+  saleAmount: number;
+  coachSharePercent: number;
+  coachAmount: number;
+  platformAmount: number;
+  status: CoachRoyaltyStatus;
+  paidAt: Date | null;
+  paidBy: string | null;
+  payoutNote: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  // Enrichment fields, present only when the query joins drill_sets / users / centers
+  drillSetName?: string;
+  coachName?: string;
+  purchasingCenterName?: string;
+}
+
+export interface CoachRoyaltyTotals {
+  coachUserId: string;
+  coachName: string;
+  pendingAmount: number;
+  paidAmount: number;
+  lifetimeAmount: number;
+  saleCount: number;
+}
+
 export interface ItemRevenue {
   itemId: string;
   itemName: string;

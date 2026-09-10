@@ -1,5 +1,6 @@
 import { query } from '../config/database';
 import { createSubscriptionDebitEntry } from './ledgerService';
+import { createRoyaltyEntryForSubscription } from './royaltyService';
 import { MarketplaceItem, CenterSubscription } from '../types';
 
 // ============================================================
@@ -187,6 +188,8 @@ export async function activateSubscription(
     }
   }
 
+  await recordRoyaltyIfPaid(subscription.id, marketplaceItemId, centerId, pricePaid);
+
   return mapCenterSubscriptionRow(subscription);
 }
 
@@ -231,6 +234,21 @@ async function recordSubscriptionDebitIfPaid(
     );
   } catch (ledgerErr) {
     console.error('[Subscriptions] Failed to create ledger entry:', ledgerErr);
+  }
+}
+
+async function recordRoyaltyIfPaid(
+  subscriptionId: string,
+  marketplaceItemId: string,
+  purchasingCenterId: string,
+  pricePaid: number
+): Promise<void> {
+  if (pricePaid <= 0) return;
+  try {
+    await createRoyaltyEntryForSubscription(subscriptionId, marketplaceItemId, purchasingCenterId, pricePaid);
+  } catch (royaltyErr) {
+    console.error('[Subscriptions] Failed to create royalty entry:', royaltyErr);
+    // Non-blocking: don't fail the activation over royalty bookkeeping
   }
 }
 
@@ -344,6 +362,7 @@ export async function approveRequest(
 
   const subscription = result.rows[0];
   await recordSubscriptionDebitIfPaid(subscription.id, request.item_name, pricePaid, subscription.center_id);
+  await recordRoyaltyIfPaid(subscription.id, subscription.marketplace_item_id, subscription.center_id, pricePaid);
   return mapCenterSubscriptionRow(subscription);
 }
 

@@ -57,6 +57,7 @@ import {
 } from '../controllers/admin/subscriptionRequests';
 import { getSubscriptionAnalytics } from '../controllers/admin/subscriptionAnalytics';
 import { getPlatformAccounting } from '../controllers/admin/platformAccounting';
+import { getRoyalties, getRoyaltyTotals, payCoachRoyalties } from '../controllers/admin/royalties';
 
 const router = Router();
 
@@ -290,5 +291,25 @@ router.get('/subscription-analytics', getSubscriptionAnalytics);
  * Every real center's income/expense totals in one place.
  */
 router.get('/platform-accounting', getPlatformAccounting);
+
+/**
+ * GET /api/admin/coach-royalties/totals
+ * Per-coach pending/paid/lifetime royalty summary — the Payouts page's
+ * main list.
+ */
+router.get('/coach-royalties/totals', getRoyaltyTotals);
+
+/**
+ * GET /api/admin/coach-royalties
+ * Every royalty entry, optionally filtered by ?coachUserId or ?status.
+ */
+router.get('/coach-royalties', getRoyalties);
+
+/**
+ * POST /api/admin/coach-royalties/:coachUserId/pay
+ * Marks all of one coach's pending royalties as paid (payout happens
+ * offline; this records it).
+ */
+router.post('/coach-royalties/:coachUserId/pay', payCoachRoyalties);
 
 export default router;

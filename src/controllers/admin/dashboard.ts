@@ -31,7 +31,10 @@ export const getDashboard = async (
       query(
         `SELECT COALESCE(SUM(amount), 0) AS total FROM fee_records WHERE status = 'PAID'`
       ),
-      query(`SELECT COUNT(*) AS count FROM drill_sets WHERE is_archived = false`),
+      query(
+        `SELECT COUNT(*) AS count FROM drill_sets
+         WHERE status = 'published' AND is_enabled = true AND is_archived = false`
+      ),
       query(
         `SELECT COUNT(*) AS count FROM drill_sets WHERE status = 'pending_review' AND is_archived = false`
       ),
