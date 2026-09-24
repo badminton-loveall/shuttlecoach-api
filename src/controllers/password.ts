@@ -4,6 +4,8 @@ import { comparePassword, hashPassword } from '../utils/auth';
 import { validatePassword } from '../utils/passwordValidator';
 import { generateResetToken, hashToken } from '../utils/tokenGenerator';
 import { sendPasswordResetEmail } from '../services/emailService';
+import { sendStudentWelcomeEmail } from '../services/welcomeEmailService';
+import { calculateAge } from '../utils/calculations';
 import { TenantRequest } from '../middleware/tenantScope';
 import { UserRole } from '../types';
 
@@ -350,6 +352,100 @@ export const sendStudentResetEmail = async (
     res.status(200).json({ message: `Reset email sent to ${resolution.email}.`, email: resolution.email });
   } catch (error) {
     console.error('[PASSWORD] Send student reset email error:', error);
+    res.status(500).json({ error: 'An error occurred' });
+  }
+};
+
+/**
+ * POST /api/students/:id/resend-invite
+ * Admin or HEAD_COACH re-sends the full student welcome email (the one sent
+ * at enrollment) with a fresh 24-hour set-password link — for when the
+ * original never arrived, expired, or was deleted. Creates the login account
+ * first if it's missing, same as the reset routes above. Like
+ * sendStudentResetEmail, the admin gets the real success/failure back.
+ */
+export const resendStudentInvite = async (
+  req: TenantRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+
+    const { role } = req.user;
+    if (role !== UserRole.ADMIN && role !== UserRole.HEAD_COACH) {
+      res.status(403).json({ error: 'You do not have permission to perform this action' });
+      return;
+    }
+
+    const studentId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+    const randomHash = await hashPassword(generateResetToken());
+    const resolution = await resolveStudentAccount(studentId, role, req.tenantCenterId, randomHash);
+
+    if (!resolution.ok) {
+      res.status(resolution.status).json({ error: resolution.error });
+      return;
+    }
+
+    // Everything else the welcome email shows: center, batch, guardian, minor status
+    const detailsResult = await query(
+      `SELECT s.date_of_birth, s.guardian_name, s.center_id,
+              c.name AS center_name, c.contact_email, c.contact_phone,
+              b.name AS batch_name
+       FROM students s
+       LEFT JOIN centers c ON c.id = s.center_id
+       LEFT JOIN batches b ON b.id = s.batch_id
+       WHERE s.id = $1`,
+      [studentId]
+    );
+    const details = detailsResult.rows[0];
+
+    const contactParts: string[] = [];
+    if (details.contact_email) contactParts.push(`Email: ${details.contact_email}`);
+    if (details.contact_phone) contactParts.push(`Phone: ${details.contact_phone}`);
+    const centerContactInfo = contactParts.length > 0
+      ? contactParts.join(' | ')
+      : 'Contact your center directly';
+
+    await query('DELETE FROM password_reset_tokens WHERE user_id = $1', [studentId]);
+    const rawToken = generateResetToken();
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await query(
+      'INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
+      [studentId, hashToken(rawToken), expiresAt.toISOString()]
+    );
+
+    const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/+$/, '');
+
+    try {
+      await sendStudentWelcomeEmail({
+        studentEmail: resolution.email,
+        studentName: resolution.name,
+        studentUsername: resolution.email,
+        resetLink: `${frontendUrl}/reset-password?token=${rawToken}`,
+        loginUrl: `${frontendUrl}/login`,
+        centerName: details.center_name || 'your center',
+        batchName: details.batch_name || undefined,
+        centerContactInfo,
+        guardianName: details.guardian_name || undefined,
+        isMinor: details.date_of_birth ? calculateAge(new Date(details.date_of_birth)) < 18 : false,
+        centerId: details.center_id,
+        rethrowOnError: true,
+      });
+    } catch (emailError) {
+      console.error(`[PASSWORD] Failed to resend invite to student ${studentId}:`, emailError);
+      res.status(502).json({
+        error: `Could not send the invite to ${resolution.email}. Check the SMTP configuration and try again.`,
+      });
+      return;
+    }
+
+    res.status(200).json({ message: `Invite sent to ${resolution.email}.`, email: resolution.email });
+  } catch (error) {
+    console.error('[PASSWORD] Resend student invite error:', error);
     res.status(500).json({ error: 'An error occurred' });
   }
 };

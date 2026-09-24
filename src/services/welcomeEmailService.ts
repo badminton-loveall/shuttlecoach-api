@@ -405,6 +405,13 @@ interface SendStudentWelcomeEmailParams {
   guardianName?: string;
   isMinor: boolean;
   centerId?: string;
+  /**
+   * When true, invalid addresses and send failures (after the retry) throw
+   * instead of being logged and swallowed. Enrollment must never fail because
+   * of email, but a manual "resend invite" wants the real error back so the
+   * admin isn't told it worked when it didn't. Defaults to false.
+   */
+  rethrowOnError?: boolean;
 }
 
 /**
@@ -545,12 +552,16 @@ export async function sendStudentWelcomeEmail({
   guardianName,
   isMinor,
   centerId,
+  rethrowOnError = false,
 }: SendStudentWelcomeEmailParams): Promise<void> {
   // Validate email
   if (!isValidEmail(studentEmail)) {
     console.warn(
       `[WelcomeEmail] Invalid student email address for center ${centerId || 'unknown'}. Skipping delivery.`
     );
+    if (rethrowOnError) {
+      throw new Error('Invalid student email address');
+    }
     return;
   }
 
@@ -587,7 +598,10 @@ export async function sendStudentWelcomeEmail({
         `[WelcomeEmail] Failed to send student welcome email for center ${centerId || 'unknown'} after retry:`,
         retryError
       );
-      // Return without throwing — never block student creation
+      if (rethrowOnError) {
+        throw retryError;
+      }
+      // Otherwise return without throwing — never block student creation
     }
   }
 }

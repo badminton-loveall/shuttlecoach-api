@@ -8,7 +8,7 @@ import {
   getStudent,
   updateStudent,
 } from '../controllers/students';
-import { adminResetStudentPassword, sendStudentResetEmail } from '../controllers/password';
+import { adminResetStudentPassword, sendStudentResetEmail, resendStudentInvite } from '../controllers/password';
 import { UserRole } from '../types';
 import { validateRequest, validateQuery } from '../middleware/validation';
 import {
@@ -41,12 +41,13 @@ router.post(
  * GET /api/students
  * List students with filtering and pagination
  * Query params: ?batch=<id>&coach=<id>&search=<name>&page=1&limit=20
- * Allowed roles: HEAD_COACH, ASSISTANT_COACH
- * Note: ASSISTANT_COACH automatically sees only assigned students
+ * Allowed roles: ADMIN, HEAD_COACH, ASSISTANT_COACH
+ * Note: ASSISTANT_COACH automatically sees only assigned students;
+ * ADMIN should pass ?center_id=<id> to scope to one center (tenantScope)
  */
 router.get(
   '/',
-  authorize(UserRole.HEAD_COACH, UserRole.ASSISTANT_COACH),
+  authorize(UserRole.ADMIN, UserRole.HEAD_COACH, UserRole.ASSISTANT_COACH),
   validateQuery(listStudentsQuerySchema),
   listStudents
 );
@@ -105,6 +106,19 @@ router.post(
   '/:id/send-reset-email',
   authorize(UserRole.ADMIN, UserRole.HEAD_COACH),
   sendStudentResetEmail
+);
+
+/**
+ * POST /api/students/:id/resend-invite
+ * Admin/HEAD_COACH re-sends the student welcome email with a fresh 24-hour
+ * set-password link — creates their login account first if it doesn't
+ * exist yet (same self-healing as the routes above).
+ * Allowed roles: ADMIN, HEAD_COACH
+ */
+router.post(
+  '/:id/resend-invite',
+  authorize(UserRole.ADMIN, UserRole.HEAD_COACH),
+  resendStudentInvite
 );
 
 export default router;
