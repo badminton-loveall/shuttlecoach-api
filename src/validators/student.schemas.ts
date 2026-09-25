@@ -26,7 +26,12 @@ export const createStudentSchema = z
     contactPhone: z
       .string()
       .regex(/^\+?[\d\s\-()]{10,20}$/, 'Invalid phone number format'),
-    email: z.string().email('Invalid email format').optional().or(z.literal('')).transform(val => val || undefined),
+    // Required at creation (not on update, below) — a student's login
+    // account can only be created with an email on file (see
+    // resolveStudentAccount in controllers/password.ts), so a student
+    // created without one would be unable to log in until someone edits
+    // their profile to add it later.
+    email: z.string().min(1, 'Email is required').email('Invalid email format'),
     guardianName: z.string().min(2, 'Guardian name must be at least 2 characters').optional().or(z.literal('')).transform(val => val || undefined),
     guardianPhone: z
       .string()

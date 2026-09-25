@@ -26,17 +26,25 @@ export const createCoach = async (
 ): Promise<void> => {
   try {
     const {
-      name, username, password, specialization, profilePhoto, email, seniorCoachId,
+      name, username: rawUsername, password, specialization, profilePhoto, email: rawEmail, seniorCoachId,
       phone, dateOfBirth, address, qualification, experienceYears, bankDetails, monthlySalary,
     } = req.body;
 
     // Validate required fields
-    if (!name || !username) {
+    if (!name || !rawUsername) {
       res.status(400).json({
         error: 'Name and username (email) are required',
       });
       return;
     }
+
+    // Normalize casing on write — username here is the coach's login email,
+    // so this is the same fix as createStudent in controllers/students.ts;
+    // see the comment there for why (mixed-case storage is what caused the
+    // Brigade Plumeria accounts to be unable to log in).
+    const username: string = rawUsername.trim().toLowerCase();
+    const email: string | undefined =
+      typeof rawEmail === 'string' && rawEmail.trim() ? rawEmail.trim().toLowerCase() : undefined;
 
     // Coach Capacity is a marketplace item — a center with no active
     // subscription still gets the catalog's free baseline seats. Checked
@@ -314,8 +322,12 @@ export const updateCoach = async (
     for (const [bodyKey, dbColumn] of Object.entries(allowedFields)) {
       if (req.body[bodyKey] !== undefined) {
         updates.push(`${dbColumn} = $${paramIndex}`);
-        // Allow null for nullable fields; for string fields use null if empty
-        const value = req.body[bodyKey];
+        // Allow null for nullable fields; for string fields use null if empty.
+        // Normalize email casing on write, same as createCoach above.
+        let value = req.body[bodyKey];
+        if (bodyKey === 'email' && typeof value === 'string') {
+          value = value.trim().toLowerCase();
+        }
         params.push(value ?? null);
         paramIndex++;
       }

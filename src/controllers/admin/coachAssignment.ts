@@ -43,7 +43,7 @@ export const assignCoach = async (
 
   if (isEmail) {
     const emailLookup = await query(
-      'SELECT id FROM users WHERE email = $1',
+      'SELECT id FROM users WHERE LOWER(email) = LOWER($1)',
       [coachId]
     );
     if (emailLookup.rows.length === 0) {

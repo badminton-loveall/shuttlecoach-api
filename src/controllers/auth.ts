@@ -32,9 +32,14 @@ export const login = async (
 
     console.log('[LOGIN] Attempting login for user:', identifier);
 
-    // Find user by email or username
+    // Find user by email or username, case-insensitively — emails get typed
+    // with all sorts of casing (autocapitalized on mobile, copy-pasted from
+    // somewhere with different case than how the account was created), and
+    // a case-sensitive match here silently produces "no account found" for
+    // an account that does in fact exist. Every other email lookup in this
+    // codebase (forgot-password, duplicate-email checks) already does this.
     const result = await query(
-      'SELECT id, username, password_hash, role, name, email, profile_photo, specialization, center_id, can_access_fees FROM users WHERE email = $1 OR username = $1',
+      'SELECT id, username, password_hash, role, name, email, profile_photo, specialization, center_id, can_access_fees FROM users WHERE LOWER(email) = LOWER($1) OR LOWER(username) = LOWER($1)',
       [identifier]
     );
 
@@ -43,7 +48,8 @@ export const login = async (
     if (result.rows.length === 0) {
       console.log('[LOGIN] User not found:', identifier);
       res.status(401).json({
-        error: 'Invalid credentials',
+        error: 'No account found with that email or username',
+        errorCode: 'USER_NOT_FOUND',
       });
       return;
     }
@@ -58,7 +64,8 @@ export const login = async (
     if (!isPasswordValid) {
       console.log('[LOGIN] Password mismatch for user:', username);
       res.status(401).json({
-        error: 'Invalid credentials',
+        error: 'Incorrect password',
+        errorCode: 'PASSWORD_MISMATCH',
       });
       return;
     }

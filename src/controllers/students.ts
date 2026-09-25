@@ -26,7 +26,7 @@ export const createStudent = async (
       dateOfBirth,
       gender,
       contactPhone,
-      email,
+      email: rawEmail,
       guardianName,
       guardianPhone,
       baidNumber,
@@ -43,6 +43,16 @@ export const createStudent = async (
       coachFeedback,
       skillLevel,
     } = req.body;
+
+    // Normalize once, here, so both the students row and the login account
+    // created further down (which uses this same email as its username)
+    // store the same lowercase value. Login matches case-insensitively too
+    // (see controllers/auth.ts), but leaving mixed-case values in storage
+    // just invites the same bug again anywhere that later does an exact
+    // string match — this is exactly how the Brigade Plumeria accounts
+    // ended up unable to log in.
+    const email: string | undefined =
+      typeof rawEmail === 'string' && rawEmail.trim() ? rawEmail.trim().toLowerCase() : undefined;
 
     // Validate required fields
     if (!fullName || !dateOfBirth || !gender || !contactPhone) {
@@ -557,7 +567,14 @@ export const updateStudent = async (
     Object.entries(allowedFields).forEach(([camelKey, snakeKey]) => {
       if (req.body[camelKey] !== undefined) {
         updates.push(`${snakeKey} = $${paramIndex}`);
-        params.push(req.body[camelKey]);
+        // Normalize email casing on write, same as createStudent — see the
+        // comment there for why (case-sensitive matches elsewhere in the
+        // app were the root cause of the Brigade Plumeria login failures).
+        const value =
+          camelKey === 'email' && typeof req.body[camelKey] === 'string'
+            ? req.body[camelKey].trim().toLowerCase()
+            : req.body[camelKey];
+        params.push(value);
         paramIndex++;
       }
     });
