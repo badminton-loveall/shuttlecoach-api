@@ -77,8 +77,16 @@ export const errorHandler = (
 
   // Handle validation errors (from Zod)
   if (err instanceof ValidationError) {
+    // The generic "Validation failed" used to be the only thing the client
+    // ever saw — every caller across the app reads response.data.error as
+    // the message to show the user, but the actual reason ("Email is
+    // required", "Password must be at least 8 characters", ...) only ever
+    // lived in `details`, which nothing read. Surface the first specific
+    // message as `error` too; `details` stays for anyone that wants the
+    // full field-by-field list.
+    const primaryMessage = err.errors[0]?.message || 'Validation failed';
     res.status(400).json({
-      error: 'Validation failed',
+      error: primaryMessage,
       details: err.errors,
     });
     return;
